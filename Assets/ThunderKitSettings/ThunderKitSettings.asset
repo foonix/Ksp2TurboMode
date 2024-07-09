@@ -13,7 +13,7 @@ MonoBehaviour:
   m_Name: ThunderKitSettings
   m_EditorClassIdentifier: 
   FirstLoad: 0
-  ShowOnStartup: 1
+  ShowOnStartup: 0
   GameExecutable: KSP2_x64.exe
   GamePath: F:\games\ksp2\KSP2-0.2.2.0
   Is64Bit: 1
@@ -24,8 +24,8 @@ MonoBehaviour:
   GenerateAssetsProject: 0
   FixLocalDiskPackages: 0
   ImageCachePath: Library/MarkdownImageCache
-  CachedImageCount: 0
-  CacheSize: 0
+  CachedImageCount: 2
+  CacheSize: 0.09
   MarkdownOpenMode: 1
   SelectedPipeline: {fileID: 0}
   SelectedManifest: {fileID: 0}

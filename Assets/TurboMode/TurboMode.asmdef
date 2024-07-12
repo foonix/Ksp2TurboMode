@@ -8,9 +8,10 @@
     "overrideReferences": true,
     "precompiledReferences": [
         "Assembly-CSharp.dll",
-        "0Harmony.dll",
+        "KSPLogging.dll",
         "BepInEx.dll",
-        "KSPLogging.dll"
+        "MonoMod.RuntimeDetour.dll",
+        "0Harmony.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [],

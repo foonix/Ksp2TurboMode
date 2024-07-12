@@ -1,83 +1,57 @@
-using HarmonyLib;
 using KSP.Sim.Definitions;
 using KSP.Sim.impl;
+using MonoMod.RuntimeDetour;
+using System;
+using System.Collections.Generic;
+using System.Reflection;
 using Unity.Profiling;
 
 namespace TurboMode
 {
-    public static class AdditionalProfilerTags
+    public class AdditionalProfilerTags
     {
-        static readonly ProfilerMarker PartBehaviour_OnFixedUpdate = new("PartBehaviour.OnFixedUpdate");
-        static readonly ProfilerMarker PartBehaviourModule_OnFixedUpdate = new("PartBehaviourModule.OnFixedUpdate");
-        static readonly ProfilerMarker PhysicsSpaceProvider_OnFixedUpdate = new("PhysicsSpaceProvider.OnFixedUpdate");
-        static readonly ProfilerMarker RigidbodyBehavior_OnFixedUpdate = new("RigidbodyBehavior.OnFixedUpdate");
-        static readonly ProfilerMarker SpaceSimulation_OnFixedUpdate = new("SpaceSimulation.OnFixedUpdate");
-        static readonly ProfilerMarker VesselBehavior_OnFixedUpdate = new("VesselBehavior.OnFixedUpdate");
+        private readonly ProfilerMarker marker;
 
-        // PartBehavior
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(PartBehavior), nameof(PartBehavior.OnFixedUpdate))]
-        public static void PartBehavior_OnFixedUpdate_MarkerBegin(PartBehavior __instance)
-            => PartBehaviour_OnFixedUpdate.Begin(__instance);
+        private delegate void fixedUpdateSig(Action<UnityEngine.Object, float> orig, UnityEngine.Object contextObj, float deltaTime);
+        private delegate void fixedUpdateSigNoContext(Action<System.Object, float> orig, System.Object contextObj, float deltaTime);
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(PartBehavior), nameof(PartBehavior.OnFixedUpdate))]
-        public static void PartBehavior_OnFixedUpdate_MarkerEnd()
-            => PartBehaviour_OnFixedUpdate.End();
+        private AdditionalProfilerTags(ProfilerMarker marker)
+        {
+            this.marker = marker;
+        }
 
-        // PartBehaviourModule
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(PartBehaviourModule), nameof(PartBehaviourModule.OnFixedUpdate))]
-        public static void PartBehaviourModule_OnFixedUpdate_MarkerBegin(PartBehaviourModule __instance)
-            => PartBehaviourModule_OnFixedUpdate.Begin(__instance);
+        public static List<Hook> MakeHooks() => new()
+            {
+                new AdditionalProfilerTags(new("PartBehaviour.OnFixedUpdate"))
+                    .MakeHook(typeof(PartBehavior).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("PartBehaviourModule.OnFixedUpdate"))
+                    .MakeHook(typeof(PartBehaviourModule).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("PhysicsSpaceProvider.OnFixedUpdate"))
+                    .MakeHook(typeof(PhysicsSpaceProvider).GetMethod("IFixedUpdate.OnFixedUpdate", BindingFlags.Instance | BindingFlags.NonPublic)),
+                new AdditionalProfilerTags(new("RigidbodyBehavior.OnFixedUpdate"))
+                    .MakeHook(typeof(RigidbodyBehavior).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("SpaceSimulation.OnFixedUpdate"))
+                    .MakeHookNoContext(typeof(SpaceSimulation).GetMethod("OnFixedUpdate", new Type[] { typeof(float) })),
+                new AdditionalProfilerTags(new("VesselBehavior.OnFixedUpdate"))
+                    .MakeHook(typeof(VesselBehavior).GetMethod("OnFixedUpdate")),
+            };
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(PartBehaviourModule), nameof(PartBehaviourModule.OnFixedUpdate))]
-        public static void PartBehaviourModule_OnFixedUpdate_MarkerEnd()
-            => PartBehaviourModule_OnFixedUpdate.End();
+        private void WrapFixedUpdate(Action<UnityEngine.Object, float> orig, UnityEngine.Object contextObj, float deltaTime)
+        {
+            marker.Begin(contextObj);
+            orig(contextObj, deltaTime);
+            marker.End();
+        }
 
-        // PhysicsSpaceProvider
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(PhysicsSpaceProvider), "IFixedUpdate.OnFixedUpdate")]
-        public static void PhysicsSpaceProvider_OnFixedUpdate_MarkerBegin(PhysicsSpaceProvider __instance)
-            => PhysicsSpaceProvider_OnFixedUpdate.Begin(__instance);
+        private void WrapFixedUpdateNoContext(Action<System.Object, float> orig, System.Object contextObj, float deltaTime)
+        {
+            marker.Begin();
+            orig(contextObj, deltaTime);
+            marker.End();
+        }
 
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(PhysicsSpaceProvider), "IFixedUpdate.OnFixedUpdate")]
-        public static void PhysicsSpaceProvider_OnFixedUpdate_MarkerEnd()
-            => PhysicsSpaceProvider_OnFixedUpdate.End();
+        private Hook MakeHook(MethodInfo source) => new(source, (fixedUpdateSig)WrapFixedUpdate);
 
-        // RigidbodyBehavior
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(RigidbodyBehavior), nameof(RigidbodyBehavior.OnFixedUpdate))]
-        public static void RigidbodyBehavior_OnFixedUpdate_MarkerBegin(RigidbodyBehavior __instance)
-            => RigidbodyBehavior_OnFixedUpdate.Begin(__instance);
-
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(RigidbodyBehavior), nameof(RigidbodyBehavior.OnFixedUpdate))]
-        public static void RigidbodyBehavior_OnFixedUpdate_MarkerEnd()
-            => RigidbodyBehavior_OnFixedUpdate.End();
-
-        // SpaceSimulation
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(SpaceSimulation), nameof(SpaceSimulation.OnFixedUpdate), new System.Type[] { typeof(float), typeof(bool) })]
-        public static void SpaceSimulation_OnFixedUpdate_MarkerBegin()
-            => SpaceSimulation_OnFixedUpdate.Begin();
-
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(SpaceSimulation), nameof(SpaceSimulation.OnFixedUpdate), new System.Type[] { typeof(float), typeof(bool) })]
-        public static void SpaceSimulation_OnFixedUpdate_MarkerEnd()
-            => SpaceSimulation_OnFixedUpdate.End();
-
-        // VesselBehavior
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(VesselBehavior), nameof(VesselBehavior.OnFixedUpdate))]
-        public static void VesselBehavior_OnFixedUpdate_MarkerBegin(RigidbodyBehavior __instance)
-            => VesselBehavior_OnFixedUpdate.Begin(__instance);
-
-        [HarmonyPostfix]
-        [HarmonyPatch(typeof(VesselBehavior), nameof(VesselBehavior.OnFixedUpdate))]
-        public static void VesselBehavior_OnFixedUpdate_MarkerEnd()
-            => VesselBehavior_OnFixedUpdate.End();
+        private Hook MakeHookNoContext(MethodInfo source) => new(source, (fixedUpdateSigNoContext)WrapFixedUpdateNoContext);
     }
 }

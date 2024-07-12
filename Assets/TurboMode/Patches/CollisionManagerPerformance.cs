@@ -1,8 +1,9 @@
-using HarmonyLib;
 using KSP.Sim.impl;
+using Mono.Cecil.Cil;
+using MonoMod.Cil;
+using MonoMod.RuntimeDetour;
+using System;
 using System.Collections.Generic;
-using System.Reflection;
-using System.Reflection.Emit;
 using Unity.Profiling;
 using UnityEngine;
 
@@ -16,40 +17,24 @@ namespace TurboMode
 
         static readonly ProfilerMarker CollisionManagerPerformance_AddPartAdditive = new("CollisionManagerPerformance.AddPartAdditive");
 
-        #region Harmony patching
-        static readonly MethodInfo cmUpdateIgnored = AccessTools.Method(typeof(CollisionManager), "OnCollisionIgnoreUpdate");
-        static readonly MethodInfo tmAddPartAdditive = AccessTools.Method(typeof(CollisionManagerPerformance), "AddPartAdditive");
-
-        [HarmonyPatch(typeof(PartBehavior), "Start")]
-        [HarmonyTranspiler]
-        public static IEnumerable<CodeInstruction> PartAddCollidersAdditive_Patch(IEnumerable<CodeInstruction> instructions)
+        public static List<IDetour> MakeHooks() => new()
         {
-            var found = false;
-            foreach (var instruction in instructions)
-            {
-                if (instruction.Calls(cmUpdateIgnored))
-                {
-                    // CollisionManager is already on the stack
-                    yield return new CodeInstruction(OpCodes.Ldarg_0);
-                    yield return new CodeInstruction(OpCodes.Call, tmAddPartAdditive);
-                    found = true;
-                }
-                else
-                {
-                    yield return instruction;
-                }
-            }
-            if (found is false)
-                Debug.Log("TM: Cannot find <Stdfld someField> in OriginalType.OriginalMethod");
-        }
+            new ILHook(typeof(PartBehavior).GetMethod("Start",System.Reflection.BindingFlags.NonPublic |System.Reflection.BindingFlags.Instance), PartBehavior_Start_Patch),
+            new Hook(typeof(CollisionManager).GetMethod("OnCollisionIgnoreUpdate"), (Action<CollisionManager>)LogMissedCall),
+        };
 
-        [HarmonyPrefix]
-        [HarmonyPatch(typeof(CollisionManager), nameof(CollisionManager.OnCollisionIgnoreUpdate))]
-        public static void LogMissedCall()
+        public static void LogMissedCall(CollisionManager _) => Debug.LogError("Process called to OnCollisionIgnoreUpdate");
+
+        static void PartBehavior_Start_Patch(ILContext context)
         {
-            Debug.LogError("Process called to OnCollisionIgnoreUpdate");
+            ILCursor cursor = new(context);
+            cursor.GotoNext(inst => inst.MatchCallvirt(typeof(CollisionManager), "OnCollisionIgnoreUpdate"));
+            cursor.Remove();  // we are replacing this call
+            // CollisionManager is already on the stack
+            cursor
+                .Emit(OpCodes.Ldarg_0) // this (PartBehavior)
+                .Emit(OpCodes.Callvirt, typeof(CollisionManagerPerformance).GetMethod("AddPartAdditive"));
         }
-        #endregion
 
         private struct VesselData
         {

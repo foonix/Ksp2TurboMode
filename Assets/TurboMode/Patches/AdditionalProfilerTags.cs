@@ -20,7 +20,7 @@ namespace TurboMode
             this.marker = marker;
         }
 
-        public static List<Hook> MakeHooks() => new()
+        public static List<IDetour> MakeHooks() => new()
             {
                 new AdditionalProfilerTags(new("PartBehaviour.OnFixedUpdate"))
                     .MakeHook(typeof(PartBehavior).GetMethod("OnFixedUpdate")),

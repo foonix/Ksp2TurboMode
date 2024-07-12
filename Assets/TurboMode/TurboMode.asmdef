@@ -11,7 +11,8 @@
         "KSPLogging.dll",
         "BepInEx.dll",
         "MonoMod.RuntimeDetour.dll",
-        "0Harmony.dll"
+        "MonoMod.Utils.dll",
+        "Mono.Cecil.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [],

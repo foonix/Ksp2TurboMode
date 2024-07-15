@@ -61,6 +61,8 @@ namespace TurboMode
             // let CollisionManager do its thing
             orig(cm);
 
+            Debug.Log("Starting CM check");
+
             var field = typeof(CollisionManager).GetField("_vesselPartsList", BindingFlags.Instance | BindingFlags.NonPublic);
             IEnumerable partsLists = field.GetValue(cm) as IEnumerable;
 
@@ -75,6 +77,17 @@ namespace TurboMode
                 foreach (var cmCollider in colliders)
                 {
                     var foundColliderData = data.colliders.Where(cd => cd.collider == cmCollider).FirstOrDefault();
+                    var parentPart = cmCollider.GetComponentInParent<PartBehavior>();
+
+                    if (!parentPart.Colliders.Contains(cmCollider))
+                    {
+                        Debug.Log($"Part {parentPart} collider list doesn't contain {cmCollider}");
+                    }
+
+                    if (!(cmCollider.gameObject.activeInHierarchy && cmCollider.enabled))
+                    {
+                        continue;
+                    }
 
                     // check that I'm tracking all of the colliders I'm supposed to
                     if (!foundColliderData.collider)
@@ -84,7 +97,7 @@ namespace TurboMode
                     }
 
                     // check if NoSameVesselCollision tag has changed without notice
-                    if(foundColliderData.hasNoSameVesselCollisionTag != cmCollider.CompareTag("NoSameVesselCollision"))
+                    if (foundColliderData.hasNoSameVesselCollisionTag != cmCollider.CompareTag("NoSameVesselCollision"))
                     {
                         Debug.Log($"NoSameVesselCollision tag has changed on {cmCollider.name}");
                     }
@@ -92,16 +105,18 @@ namespace TurboMode
                     // check assumptions about physics
                     foreach (var otherTrackedCollider in data.colliders)
                     {
-                        if(cmCollider == otherTrackedCollider.collider)
+                        // skip colliders we are keeping track of colliders that CM has cleaned up because they're not enabled
+                        if (cmCollider == otherTrackedCollider.collider || !otherTrackedCollider.collider.enabled)
                         {
                             continue;
                         }
 
                         bool isIgnored = Physics.GetIgnoreCollision(cmCollider, otherTrackedCollider.collider);
-                        bool myAssumption = otherTrackedCollider.hasNoSameVesselCollisionTag || foundColliderData.hasNoSameVesselCollisionTag;
-                        if(isIgnored != myAssumption)
+                        bool notSameRigidbody = cmCollider.attachedRigidbody != otherTrackedCollider.collider.attachedRigidbody;
+                        bool myAssumption = notSameRigidbody;
+                        if (isIgnored != myAssumption)
                         {
-                            Debug.Log($"Assumption check failed: {myAssumption} {cmCollider.name} {otherTrackedCollider.collider.name}");
+                            Debug.Log($"Assumption check failed: {isIgnored} {cmCollider.name}({cmCollider.isTrigger}) {otherTrackedCollider.collider.name}({otherTrackedCollider.collider.isTrigger})");
                         }
                     }
                 }
@@ -176,7 +191,7 @@ namespace TurboMode
 
                 foreach (var collider in vesselData.colliders)
                 {
-                    if (partColliderData.hasNoSameVesselCollisionTag || collider.hasNoSameVesselCollisionTag)
+                    if (partColliderData.collider.attachedRigidbody != collider.collider.attachedRigidbody)
                     {
                         Physics.IgnoreCollision(partCollider, collider, ignore: true);
                     }

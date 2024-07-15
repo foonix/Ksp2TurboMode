@@ -3,12 +3,30 @@ using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
+using System.Reflection;
 using Unity.Profiling;
 using UnityEngine;
 
 namespace TurboMode
 {
+    // === Justification ===
+    // CollisionManager.UpdatePartCollisionIgnores() is O(n^2), scaling with collider count.
+    // That is called each frame after adding ~10 or so parts, resulting in approximately O(!(n^2)) on large craft.
+    // For high part count vessels, loading frame rate bogs down, and any dock/undock/breakoff operation results in frame drop.
+
+    // === Assumptions ===
+    // PhysicsSettings.ENABLE_PART_TO_PART_COLLISIONS is never true.
+    // That setting enables parts on the same vehicle to collide with each other unless the collider has the
+    // NoSameVesselCollision tag.  As far as I know, this isn't used.
+
+    // === Optimizations ===
+    // Simplify by dropping support for part-to-part collisions, ignore the related tag, and don't track parts individually.
+    // Avoid Transform.Find*() operations.  Use available data such as PartBehavior.Colliders instead.
+    // Use sets to push wort-case closer to O(n * log(m)), minimising calls to Physics.IgnoreCollision().
+
     public static class CollisionManagerPerformance
     {
         static readonly Dictionary<CollisionManager, VesselData> vesselData = new();
@@ -19,11 +37,76 @@ namespace TurboMode
 
         public static List<IDetour> MakeHooks() => new()
         {
-            new ILHook(typeof(PartBehavior).GetMethod("Start",System.Reflection.BindingFlags.NonPublic |System.Reflection.BindingFlags.Instance), PartBehavior_Start_Patch),
-            new Hook(typeof(CollisionManager).GetMethod("OnCollisionIgnoreUpdate"), (Action<CollisionManager>)LogMissedCall),
+            new ILHook(typeof(PartBehavior).GetMethod("Start",BindingFlags.NonPublic |BindingFlags.Instance), PartBehavior_Start_Patch),
+            new Hook(
+                typeof(CollisionManager).GetMethod("OnCollisionIgnoreUpdate"),
+                (Action<Action<CollisionManager>, CollisionManager>)LogMissedCall
+                ),
+            new Hook(
+                typeof(CollisionManager).GetMethod("UpdatePartCollisionIgnores", BindingFlags.Instance | BindingFlags.NonPublic),
+                (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck
+                ),
         };
 
-        public static void LogMissedCall(CollisionManager _) => Debug.LogError("Process called to OnCollisionIgnoreUpdate");
+        public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
+        {
+            Debug.LogError("Process called to OnCollisionIgnoreUpdate");
+            // the goal here is to obviate this, but leaving it on to check
+            // if my code is not processing colliders it should be.
+            orig(cm);
+        }
+
+        public static void MissingColliderCheck(Action<CollisionManager> orig, CollisionManager cm)
+        {
+            // let CollisionManager do its thing
+            orig(cm);
+
+            var field = typeof(CollisionManager).GetField("_vesselPartsList", BindingFlags.Instance | BindingFlags.NonPublic);
+            IEnumerable partsLists = field.GetValue(cm) as IEnumerable;
+
+            var data = GetOrCreateVesselData(cm);
+
+            foreach (var partsList in partsLists)
+            {
+                var colliders = partsList.GetType()
+                    .GetField("Colliders")
+                    .GetValue(partsList) as List<Collider>;
+
+                foreach (var cmCollider in colliders)
+                {
+                    var foundColliderData = data.colliders.Where(cd => cd.collider == cmCollider).FirstOrDefault();
+
+                    // check that I'm tracking all of the colliders I'm supposed to
+                    if (!foundColliderData.collider)
+                    {
+                        Debug.Log($"Missing collider {cmCollider.name}");
+                        continue;
+                    }
+
+                    // check if NoSameVesselCollision tag has changed without notice
+                    if(foundColliderData.hasNoSameVesselCollisionTag != cmCollider.CompareTag("NoSameVesselCollision"))
+                    {
+                        Debug.Log($"NoSameVesselCollision tag has changed on {cmCollider.name}");
+                    }
+
+                    // check assumptions about physics
+                    foreach (var otherTrackedCollider in data.colliders)
+                    {
+                        if(cmCollider == otherTrackedCollider.collider)
+                        {
+                            continue;
+                        }
+
+                        bool isIgnored = Physics.GetIgnoreCollision(cmCollider, otherTrackedCollider.collider);
+                        bool myAssumption = otherTrackedCollider.hasNoSameVesselCollisionTag || foundColliderData.hasNoSameVesselCollisionTag;
+                        if(isIgnored != myAssumption)
+                        {
+                            Debug.Log($"Assumption check failed: {myAssumption} {cmCollider.name} {otherTrackedCollider.collider.name}");
+                        }
+                    }
+                }
+            }
+        }
 
         static void PartBehavior_Start_Patch(ILContext context)
         {
@@ -93,7 +176,7 @@ namespace TurboMode
 
                 foreach (var collider in vesselData.colliders)
                 {
-                    if (partColliderData.hasNoSameVesselCollisionTag && collider.hasNoSameVesselCollisionTag)
+                    if (partColliderData.hasNoSameVesselCollisionTag || collider.hasNoSameVesselCollisionTag)
                     {
                         Physics.IgnoreCollision(partCollider, collider, ignore: true);
                     }

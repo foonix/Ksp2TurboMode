@@ -30,7 +30,6 @@ namespace TurboMode
     public static class CollisionManagerPerformance
     {
         static readonly Dictionary<CollisionManager, VesselData> vesselData = new();
-        static readonly List<Collider> _tempColliderStorage = new();
         static readonly List<ColliderData> _tempColliderDataStorage = new();
 
         static readonly ProfilerMarker CollisionManagerPerformance_AddPartAdditive = new("CollisionManagerPerformance.AddPartAdditive");
@@ -61,12 +60,12 @@ namespace TurboMode
             // let CollisionManager do its thing
             orig(cm);
 
-            Debug.Log("Starting CM check");
 
             var field = typeof(CollisionManager).GetField("_vesselPartsList", BindingFlags.Instance | BindingFlags.NonPublic);
             IEnumerable partsLists = field.GetValue(cm) as IEnumerable;
 
             var data = GetOrCreateVesselData(cm);
+            Debug.Log($"Starting CM check for {data.vessel}");
 
             foreach (var partsList in partsLists)
             {
@@ -168,23 +167,8 @@ namespace TurboMode
         {
             CollisionManagerPerformance_AddPartAdditive.Begin(cm);
             var vesselData = GetOrCreateVesselData(cm);
-            bool isKerbalEVA = cm.Vessel.SimObjectComponent.IsKerbalEVA;
 
-            Transform transform = part.FindModelTransform("model");
-
-            CollisionManagerPerformance_AddPartAdditive.Begin(cm);
-            if (transform != null)
-            {
-                transform.GetComponentsInChildren(isKerbalEVA, _tempColliderStorage);
-            }
-            else
-            {
-                //GetPartColliders(part.transform, isKerbalEVA, ref _tempColliderStorage);
-                cm.CallPrivateVoidMethod("GetPartColliders", part.transform, isKerbalEVA, _tempColliderStorage);
-            }
-            CollisionManagerPerformance_AddPartAdditive.End();
-
-            foreach (var partCollider in _tempColliderStorage)
+            foreach (var partCollider in part.Colliders)
             {
                 var partColliderData = new ColliderData(partCollider);
                 _tempColliderDataStorage.Add(partColliderData);
@@ -203,7 +187,6 @@ namespace TurboMode
             {
                 vesselData.colliders.Add(tmp);
             }
-            _tempColliderStorage.Clear();
             _tempColliderDataStorage.Clear();
             CollisionManagerPerformance_AddPartAdditive.End();
         }

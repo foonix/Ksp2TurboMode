@@ -10,6 +10,9 @@ namespace TurboMode
     {
         private static readonly List<IDetour> hooks = new();
 
+        // Disable game state interactions, and enable verification those would have done the right thing.
+        internal static bool testMode = true;
+
         private void Awake()
         {
             Logger.LogInfo($"TurboMode startup sequence initiated");

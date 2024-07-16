@@ -1,3 +1,4 @@
+using KSP.Sim;
 using KSP.Sim.impl;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
@@ -27,12 +28,14 @@ namespace TurboMode
     // Avoid Transform.Find*() operations.  Use available data such as PartBehavior.Colliders instead.
     // Use sets to push wort-case closer to O(n * log(m)), minimising calls to Physics.IgnoreCollision().
 
-    public static class CollisionManagerPerformance
+    public class CollisionManagerPerformance
     {
         static readonly Dictionary<CollisionManager, VesselData> vesselData = new();
-        static readonly List<ColliderData> _tempColliderDataStorage = new();
+        static readonly List<Collider> _tempColliderStorage = new(100);
+
 
         static readonly ProfilerMarker CollisionManagerPerformance_AddPartAdditive = new("CollisionManagerPerformance.AddPartAdditive");
+        static readonly ProfilerMarker CollisionManagerPerformance_GetOrCreateVesselData = new("CollisionManagerPerformance.GetOrCreateVesselData");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -49,7 +52,8 @@ namespace TurboMode
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
         {
-            Debug.LogError("Process called to OnCollisionIgnoreUpdate");
+            if (!TurboModePlugin.testMode) { return; }
+            Debug.LogError($"Process called to OnCollisionIgnoreUpdate for {cm.name}");
             // the goal here is to obviate this, but leaving it on to check
             // if my code is not processing colliders it should be.
             orig(cm);
@@ -59,7 +63,6 @@ namespace TurboMode
         {
             // let CollisionManager do its thing
             orig(cm);
-
 
             var field = typeof(CollisionManager).GetField("_vesselPartsList", BindingFlags.Instance | BindingFlags.NonPublic);
             IEnumerable partsLists = field.GetValue(cm) as IEnumerable;
@@ -75,7 +78,6 @@ namespace TurboMode
 
                 foreach (var cmCollider in colliders)
                 {
-                    var foundColliderData = data.colliders.Where(cd => cd.collider == cmCollider).FirstOrDefault();
                     var parentPart = cmCollider.GetComponentInParent<PartBehavior>();
 
                     if (!parentPart.Colliders.Contains(cmCollider))
@@ -89,33 +91,30 @@ namespace TurboMode
                     }
 
                     // check that I'm tracking all of the colliders I'm supposed to
-                    if (!foundColliderData.collider)
+                    if (!data.colliders.Contains(cmCollider))
                     {
                         Debug.Log($"Missing collider {cmCollider.name}");
                         continue;
-                    }
-
-                    // check if NoSameVesselCollision tag has changed without notice
-                    if (foundColliderData.hasNoSameVesselCollisionTag != cmCollider.CompareTag("NoSameVesselCollision"))
-                    {
-                        Debug.Log($"NoSameVesselCollision tag has changed on {cmCollider.name}");
                     }
 
                     // check assumptions about physics
                     foreach (var otherTrackedCollider in data.colliders)
                     {
                         // skip colliders we are keeping track of colliders that CM has cleaned up because they're not enabled
-                        if (cmCollider == otherTrackedCollider.collider || !otherTrackedCollider.collider.enabled)
+                        // RCS thrusters toggle their GameObject enabled for the sfx for each port.
+                        // Some things specifically toggle the collider.
+                        if (cmCollider == otherTrackedCollider
+                            || !otherTrackedCollider || !otherTrackedCollider.enabled || !otherTrackedCollider.gameObject.activeInHierarchy)
                         {
                             continue;
                         }
 
-                        bool isIgnored = Physics.GetIgnoreCollision(cmCollider, otherTrackedCollider.collider);
-                        bool notSameRigidbody = cmCollider.attachedRigidbody != otherTrackedCollider.collider.attachedRigidbody;
+                        bool isIgnored = Physics.GetIgnoreCollision(cmCollider, otherTrackedCollider);
+                        bool notSameRigidbody = cmCollider.attachedRigidbody != otherTrackedCollider.attachedRigidbody;
                         bool myAssumption = notSameRigidbody;
                         if (isIgnored != myAssumption)
                         {
-                            Debug.Log($"Assumption check failed: {isIgnored} {cmCollider.name}({cmCollider.isTrigger}) {otherTrackedCollider.collider.name}({otherTrackedCollider.collider.isTrigger})");
+                            Debug.Log($"Assumption check failed: {isIgnored} {cmCollider.name}({cmCollider.isTrigger}) {otherTrackedCollider.name}({otherTrackedCollider.isTrigger})");
                         }
                     }
                 }
@@ -136,72 +135,109 @@ namespace TurboMode
         private struct VesselData
         {
             public VesselBehavior vessel;
-            public bool collidersAreActive;
-            public bool colliderDataIsDirty;
-            public readonly List<ColliderData> colliders;
+            public readonly HashSet<Collider> colliders;
 
             public VesselData(VesselBehavior vessel)
             {
                 this.vessel = vessel;
-                colliders = new();
-                collidersAreActive = false;
-                colliderDataIsDirty = false;
+                colliders = new(100);
             }
-        }
-
-        private struct ColliderData
-        {
-            public bool hasNoSameVesselCollisionTag;
-            public Collider collider;
-
-            public ColliderData(Collider collider)
-            {
-                hasNoSameVesselCollisionTag = collider.CompareTag("NoSameVesselCollision");
-                this.collider = collider;
-            }
-
-            public static implicit operator Collider(ColliderData d) => d.collider;
         }
 
         public static void AddPartAdditive(CollisionManager cm, PartBehavior part)
         {
             CollisionManagerPerformance_AddPartAdditive.Begin(cm);
+            Debug.Log($"TM: Adding part {part} to {cm.Vessel}");
             var vesselData = GetOrCreateVesselData(cm);
 
-            foreach (var partCollider in part.Colliders)
+            foreach (var addedPartCollider in part.Colliders)
             {
-                var partColliderData = new ColliderData(partCollider);
-                _tempColliderDataStorage.Add(partColliderData);
+                var addedPartColliderRigidbody = addedPartCollider.attachedRigidbody;
 
-                foreach (var collider in vesselData.colliders)
+                foreach (var existingCollider in vesselData.colliders)
                 {
-                    if (partColliderData.collider.attachedRigidbody != collider.collider.attachedRigidbody)
+                    if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testMode)
                     {
-                        Physics.IgnoreCollision(partCollider, collider, ignore: true);
+                        Physics.IgnoreCollision(addedPartCollider, existingCollider, ignore: true);
                     }
                 }
             }
 
             // AddRange creates garbage.
-            foreach (var tmp in _tempColliderDataStorage)
+            foreach (var addedPartCollider in part.Colliders)
             {
-                vesselData.colliders.Add(tmp);
+                vesselData.colliders.Add(addedPartCollider);
             }
-            _tempColliderDataStorage.Clear();
             CollisionManagerPerformance_AddPartAdditive.End();
+        }
+
+        private static void OnPartsChangedVessel(CollisionManager cm, List<PartComponent> parts, bool adding)
+        {
+            Debug.Log(string.Format("TM: {0} {1} parts for {2}",
+                adding ? "Adding" : "Removing",
+                parts.Count,
+                cm.Vessel));
+            var data = GetOrCreateVesselData(cm);
+
+            // not separating parts from each other on the assumption that each group
+            // removed is going to the same vessel or debris
+            foreach (var partComponent in parts)
+            {
+                var part = GetPartBehavior(partComponent);
+                if (!part) continue;
+
+                foreach (var removingCollider in part.Colliders)
+                {
+                    bool canged = adding ? data.colliders.Add(removingCollider) : data.colliders.Remove(removingCollider);
+                    if (canged)
+                    {
+                        _tempColliderStorage.Add(removingCollider);
+                    }
+                }
+            }
+
+            foreach (var removedCollider in _tempColliderStorage)
+            {
+                foreach (var remainingCollider in data.colliders)
+                {
+                    if (!TurboModePlugin.testMode)
+                    {
+                        Physics.IgnoreCollision(remainingCollider, removedCollider, adding);
+                    }
+                }
+            }
+
+            _tempColliderStorage.Clear();
         }
 
         private static VesselData GetOrCreateVesselData(CollisionManager cm)
         {
+            CollisionManagerPerformance_GetOrCreateVesselData.Begin(cm);
             if (vesselData.TryGetValue(cm, out VesselData data))
             {
+                CollisionManagerPerformance_GetOrCreateVesselData.End();
                 return data;
             }
 
             data = new VesselData(cm.Vessel);
             vesselData.Add(cm, data);
+            cm.Vessel.PartOwner.SimObjectComponent.PartsAdded += (parts) =>
+            {
+                OnPartsChangedVessel(cm, parts, true);
+            };
+            cm.Vessel.PartOwner.SimObjectComponent.PartsRemoved += (parts) =>
+            {
+                OnPartsChangedVessel(cm, parts, false);
+            };
 
+            CollisionManagerPerformance_GetOrCreateVesselData.End();
             return data;
+        }
+
+        private static PartBehavior GetPartBehavior(PartComponent modelComponent)
+        {
+            SimulationObjectModel model = modelComponent.SimulationObject;
+            return ((ISimulationObjectView)modelComponent.Game.SpaceSimulation.ModelViewMap.FromModel(model))?.Part;
         }
     }
 }

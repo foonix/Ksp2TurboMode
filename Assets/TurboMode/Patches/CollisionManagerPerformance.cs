@@ -8,6 +8,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
+using TurboMode.Models;
 using Unity.Profiling;
 using UnityEngine;
 
@@ -31,23 +32,20 @@ namespace TurboMode
     public class CollisionManagerPerformance
     {
         static readonly Dictionary<CollisionManager, VesselData> vesselData = new();
-        static readonly List<Collider> _tempColliderStorage = new(100);
 
-
-        static readonly ProfilerMarker CollisionManagerPerformance_AddPartAdditive = new("CollisionManagerPerformance.AddPartAdditive");
         static readonly ProfilerMarker CollisionManagerPerformance_GetOrCreateVesselData = new("CollisionManagerPerformance.GetOrCreateVesselData");
 
         public static List<IDetour> MakeHooks() => new()
         {
-            new ILHook(typeof(PartBehavior).GetMethod("Start",BindingFlags.NonPublic |BindingFlags.Instance), PartBehavior_Start_Patch),
+            //new ILHook(typeof(PartBehavior).GetMethod("Start",BindingFlags.NonPublic |BindingFlags.Instance), PartBehavior_Start_Patch),
             new Hook(
                 typeof(CollisionManager).GetMethod("OnCollisionIgnoreUpdate"),
                 (Action<Action<CollisionManager>, CollisionManager>)LogMissedCall
                 ),
-            new Hook(
-                typeof(CollisionManager).GetMethod("UpdatePartCollisionIgnores", BindingFlags.Instance | BindingFlags.NonPublic),
-                (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck
-                ),
+            //new Hook(
+            //    typeof(CollisionManager).GetMethod("UpdatePartCollisionIgnores", BindingFlags.Instance | BindingFlags.NonPublic),
+            //    (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck
+            //    ),
         };
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
@@ -91,14 +89,14 @@ namespace TurboMode
                     }
 
                     // check that I'm tracking all of the colliders I'm supposed to
-                    if (!data.colliders.Contains(cmCollider))
+                    if (!data.vcsModel.colliders.Contains(cmCollider))
                     {
                         Debug.Log($"Missing collider {cmCollider.name}");
                         continue;
                     }
 
                     // check assumptions about physics
-                    foreach (var otherTrackedCollider in data.colliders)
+                    foreach (var otherTrackedCollider in data.vcsModel.colliders)
                     {
                         // skip colliders we are keeping track of colliders that CM has cleaned up because they're not enabled
                         // RCS thrusters toggle their GameObject enabled for the sfx for each port.
@@ -134,81 +132,17 @@ namespace TurboMode
 
         private struct VesselData
         {
+            public VesselSelfCollide vcsModel;
             public VesselBehavior vessel;
-            public readonly HashSet<Collider> colliders;
 
             public VesselData(VesselBehavior vessel)
             {
                 this.vessel = vessel;
-                colliders = new(100);
+                vcsModel = new(vessel.SimObjectComponent);
             }
         }
 
-        public static void AddPartAdditive(CollisionManager cm, PartBehavior part)
-        {
-            CollisionManagerPerformance_AddPartAdditive.Begin(cm);
-            Debug.Log($"TM: Adding part {part} to {cm.Vessel}");
-            var vesselData = GetOrCreateVesselData(cm);
 
-            foreach (var addedPartCollider in part.Colliders)
-            {
-                var addedPartColliderRigidbody = addedPartCollider.attachedRigidbody;
-
-                foreach (var existingCollider in vesselData.colliders)
-                {
-                    if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testMode)
-                    {
-                        Physics.IgnoreCollision(addedPartCollider, existingCollider, ignore: true);
-                    }
-                }
-            }
-
-            // AddRange creates garbage.
-            foreach (var addedPartCollider in part.Colliders)
-            {
-                vesselData.colliders.Add(addedPartCollider);
-            }
-            CollisionManagerPerformance_AddPartAdditive.End();
-        }
-
-        private static void OnPartsChangedVessel(CollisionManager cm, List<PartComponent> parts, bool adding)
-        {
-            Debug.Log(string.Format("TM: {0} {1} parts for {2}",
-                adding ? "Adding" : "Removing",
-                parts.Count,
-                cm.Vessel));
-            var data = GetOrCreateVesselData(cm);
-
-            // not separating parts from each other on the assumption that each group
-            // removed is going to the same vessel or debris
-            foreach (var partComponent in parts)
-            {
-                var part = GetPartBehavior(partComponent);
-                if (!part) continue;
-
-                foreach (var removingCollider in part.Colliders)
-                {
-                    bool canged = adding ? data.colliders.Add(removingCollider) : data.colliders.Remove(removingCollider);
-                    if (canged)
-                    {
-                        _tempColliderStorage.Add(removingCollider);
-                    }
-                }
-            }
-
-            foreach (var removedCollider in _tempColliderStorage)
-            {
-                foreach (var remainingCollider in data.colliders)
-                {
-                    if (!TurboModePlugin.testMode)
-                    {
-                        Physics.IgnoreCollision(remainingCollider, removedCollider, adding);
-                    }
-                }
-            }
-
-            _tempColliderStorage.Clear();
-        }
 
         private static VesselData GetOrCreateVesselData(CollisionManager cm)
         {
@@ -221,23 +155,19 @@ namespace TurboMode
 
             data = new VesselData(cm.Vessel);
             vesselData.Add(cm, data);
-            cm.Vessel.PartOwner.SimObjectComponent.PartsAdded += (parts) =>
-            {
-                OnPartsChangedVessel(cm, parts, true);
-            };
-            cm.Vessel.PartOwner.SimObjectComponent.PartsRemoved += (parts) =>
-            {
-                OnPartsChangedVessel(cm, parts, false);
-            };
+            //cm.Vessel.PartOwner.SimObjectComponent.PartsAdded += (parts) =>
+            //{
+            //    data.vcsModel.OnPartsChangedVessel(cm, parts, true);
+            //};
+            //cm.Vessel.PartOwner.SimObjectComponent.PartsRemoved += (parts) =>
+            //{
+            //    data.vcsModel.OnPartsChangedVessel(cm, parts, false);
+            //};
 
             CollisionManagerPerformance_GetOrCreateVesselData.End();
             return data;
         }
 
-        private static PartBehavior GetPartBehavior(PartComponent modelComponent)
-        {
-            SimulationObjectModel model = modelComponent.SimulationObject;
-            return ((ISimulationObjectView)modelComponent.Game.SpaceSimulation.ModelViewMap.FromModel(model))?.Part;
-        }
+
     }
 }

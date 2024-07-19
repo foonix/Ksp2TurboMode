@@ -2,6 +2,9 @@ using BepInEx;
 using MonoMod.RuntimeDetour;
 using System.Collections.Generic;
 using KSP.Logging;
+using UnityEngine.SceneManagement;
+using BepInEx.Logging;
+using UnityEngine;
 
 namespace TurboMode
 {
@@ -16,6 +19,12 @@ namespace TurboMode
         private void Awake()
         {
             Logger.LogInfo($"TurboMode startup sequence initiated");
+            SceneManager.sceneLoaded += (scene, mode) =>
+            {
+                Logger.Log(LogLevel.Info, $"TM: Scene loaded {scene.name}");
+                if (scene.name == "boot-ksp")
+                    new GameObject("TurboModeBootstrap", typeof(Behaviors.TurboModeBootstrap));
+            };
 
             hooks.AddRange(CollisionManagerPerformance.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());

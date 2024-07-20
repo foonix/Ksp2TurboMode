@@ -33,6 +33,7 @@ namespace TurboMode.Behaviors
             Debug.Log("TM: bootstrapping gameInstance events");
 
 #if TURBOMODE_TRACE_EVENTS
+            // This is not called when a vessel is loaded in some cases, eg loading from saved game.
             gameInstance.Messages.Subscribe<VesselCreatedMessage>((message) =>
             {
                 var createdMessage = message as VesselCreatedMessage;
@@ -50,10 +51,10 @@ namespace TurboMode.Behaviors
 
                 // The game will "smear" part add overhead across multiple frames before calling
                 // VesselBehaviorInitializedMessage.  So smear collider ignore in the same way.
-                var simObj = msg.Part.SimObjectComponent.SimulationObject;
-                if (!simObj.TryFindComponent<VesselSelfCollide>(out VesselSelfCollide vsc))
+                var vesselSimObj = part.vessel.SimObjectComponent.SimulationObject;
+                if (!vesselSimObj.TryFindComponent<VesselSelfCollide>(out VesselSelfCollide vsc))
                 {
-                    simObj.AddComponent(
+                    vesselSimObj.AddComponent(
                     vsc = new VesselSelfCollide(part.vessel.SimObjectComponent),
                         0 // fixme
                         );
@@ -61,6 +62,8 @@ namespace TurboMode.Behaviors
                 vsc.AddPartAdditive(part);
             });
 
+            // This is one of the last calls after a vessel is loaded or split from another vessel.
+            // It doesn't really specify why the vessel was initialized, so its usefulness is limited.
             gameInstance.Messages.Subscribe<VesselBehaviorInitializedMessage>((message) =>
             {
                 var msg = message as VesselBehaviorInitializedMessage;
@@ -78,14 +81,33 @@ namespace TurboMode.Behaviors
                 }
             });
 
-#if TURBOMODE_TRACE_EVENTS
+            // This message is broken.  It returns the newly created "merged" vessel sim object
+            // as both VesselOne and VesselTwo.
+            // It may be better to hook into
+            // SpaceSimulation.CreateCombinedVesselSimObject()
+            // to get all 3 (original, new master, and added vessel)
             gameInstance.Messages.Subscribe<VesselDockedMessage>((message) =>
             {
                 var msg = message as VesselDockedMessage;
-                Debug.Log($"TM: Vessel docked message {msg.VesselOne.name} {msg.VesselTwo} ({Time.frameCount})");
-            });
+#if TURBOMODE_TRACE_EVENTS
+                Debug.Log($"TM: Vessel docked message {msg.VesselOne} {msg.VesselTwo} ({Time.frameCount})");
 #endif
+                var simObj = msg.VesselOne.SimObjectComponent.SimulationObject;
+                if (!simObj.TryFindComponent<VesselSelfCollide>(out var vsc))
+                {
+                    simObj.AddComponent(
+                        vsc = new VesselSelfCollide(msg.VesselOne.SimObjectComponent),
+                        0 // fixme
+                        );
+                }
+                vsc.FindNewColliders();
+            });
 
+            // After undock or staging, remainingVessel was the original vessel,
+            // and newVessel is the part that fell off.
+            // remainingVessel will have gotten PartOwnerComponent.PartsRemoved
+            // events already (enabling the physics collisions between vessels),
+            // so we only need to make newVessel track colliders it has, which are already ignoring each other.
             gameInstance.Messages.Subscribe<VesselSplitMessage>((message) =>
             {
                 var msg = message as VesselSplitMessage;

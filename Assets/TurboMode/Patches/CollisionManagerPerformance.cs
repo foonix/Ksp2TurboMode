@@ -13,38 +13,18 @@ using UnityEngine;
 
 namespace TurboMode
 {
-    // === Justification ===
-    // CollisionManager.UpdatePartCollisionIgnores() is O(n^2), scaling with collider count.
-    // That is called each frame after adding ~10 or so parts, resulting in approximately O(!(n^2)) on large craft.
-    // For high part count vessels, loading frame rate bogs down, and any dock/undock/breakoff operation results in frame drop.
-
-    // === Assumptions ===
-    // PhysicsSettings.ENABLE_PART_TO_PART_COLLISIONS is never true.
-    // That setting enables parts on the same vehicle to collide with each other unless the collider has the
-    // NoSameVesselCollision tag.  As far as I know, this isn't used.
-
-    // === Optimizations ===
-    // Simplify by dropping support for part-to-part collisions, ignore the related tag, and don't track parts individually.
-    // Avoid Transform.Find*() operations.  Use available data such as PartBehavior.Colliders instead.
-    // Use sets to push wort-case closer to O(n * log(m)), minimising calls to Physics.IgnoreCollision().
-
-    public class CollisionManagerPerformance
+    public static class CollisionManagerPerformance
     {
-        static readonly Dictionary<CollisionManager, VesselData> vesselData = new();
-
-        static readonly ProfilerMarker CollisionManagerPerformance_GetOrCreateVesselData = new("CollisionManagerPerformance.GetOrCreateVesselData");
-
         public static List<IDetour> MakeHooks() => new()
         {
-            //new ILHook(typeof(PartBehavior).GetMethod("Start",BindingFlags.NonPublic |BindingFlags.Instance), PartBehavior_Start_Patch),
             new Hook(
                 typeof(CollisionManager).GetMethod("OnCollisionIgnoreUpdate"),
                 (Action<Action<CollisionManager>, CollisionManager>)LogMissedCall
                 ),
-            //new Hook(
-            //    typeof(CollisionManager).GetMethod("UpdatePartCollisionIgnores", BindingFlags.Instance | BindingFlags.NonPublic),
-            //    (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck
-            //    ),
+            new Hook(
+                typeof(CollisionManager).GetMethod("UpdatePartCollisionIgnores", BindingFlags.Instance | BindingFlags.NonPublic),
+                (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck
+                ),
         };
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
@@ -66,8 +46,12 @@ namespace TurboMode
             var field = typeof(CollisionManager).GetField("_vesselPartsList", BindingFlags.Instance | BindingFlags.NonPublic);
             IEnumerable partsLists = field.GetValue(cm) as IEnumerable;
 
-            var data = GetOrCreateVesselData(cm);
-            Debug.Log($"Starting CM check for {data.vessel}");
+            if (!cm.Vessel.SimObjectComponent.SimulationObject.TryFindComponent(out VesselSelfCollide vsc))
+            {
+                Debug.Log($"TM: Vessel {cm.Vessel} is missing VesselSelfCollide component!");
+                return;
+            }
+            Debug.Log($"Starting CM check for {cm.Vessel}");
 
             foreach (var partsList in partsLists)
             {
@@ -90,14 +74,14 @@ namespace TurboMode
                     }
 
                     // check that I'm tracking all of the colliders I'm supposed to
-                    if (!data.vcsModel.colliders.Contains(cmCollider))
+                    if (!vsc.colliders.Contains(cmCollider))
                     {
                         Debug.Log($"Missing collider {cmCollider.name}");
                         continue;
                     }
 
                     // check assumptions about physics
-                    foreach (var otherTrackedCollider in data.vcsModel.colliders)
+                    foreach (var otherTrackedCollider in vsc.colliders)
                     {
                         // skip colliders we are keeping track of colliders that CM has cleaned up because they're not enabled
                         // RCS thrusters toggle their GameObject enabled for the sfx for each port.
@@ -119,56 +103,5 @@ namespace TurboMode
                 }
             }
         }
-
-        static void PartBehavior_Start_Patch(ILContext context)
-        {
-            ILCursor cursor = new(context);
-            cursor.GotoNext(inst => inst.MatchCallvirt(typeof(CollisionManager), "OnCollisionIgnoreUpdate"));
-            cursor.Remove();  // we are replacing this call
-            // CollisionManager is already on the stack
-            cursor
-                .Emit(OpCodes.Ldarg_0) // this (PartBehavior)
-                .Emit(OpCodes.Callvirt, typeof(CollisionManagerPerformance).GetMethod("AddPartAdditive"));
-        }
-
-        private struct VesselData
-        {
-            public VesselSelfCollide vcsModel;
-            public VesselBehavior vessel;
-
-            public VesselData(VesselBehavior vessel)
-            {
-                this.vessel = vessel;
-                vcsModel = new(vessel.SimObjectComponent);
-            }
-        }
-
-
-
-        private static VesselData GetOrCreateVesselData(CollisionManager cm)
-        {
-            CollisionManagerPerformance_GetOrCreateVesselData.Begin(cm);
-            if (vesselData.TryGetValue(cm, out VesselData data))
-            {
-                CollisionManagerPerformance_GetOrCreateVesselData.End();
-                return data;
-            }
-
-            data = new VesselData(cm.Vessel);
-            vesselData.Add(cm, data);
-            //cm.Vessel.PartOwner.SimObjectComponent.PartsAdded += (parts) =>
-            //{
-            //    data.vcsModel.OnPartsChangedVessel(cm, parts, true);
-            //};
-            //cm.Vessel.PartOwner.SimObjectComponent.PartsRemoved += (parts) =>
-            //{
-            //    data.vcsModel.OnPartsChangedVessel(cm, parts, false);
-            //};
-
-            CollisionManagerPerformance_GetOrCreateVesselData.End();
-            return data;
-        }
-
-
     }
 }

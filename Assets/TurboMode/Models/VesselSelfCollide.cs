@@ -11,12 +11,13 @@ namespace TurboMode.Models
     public class VesselSelfCollide : ObjectComponent
     {
         [TypeConverterIgnore]
-        public readonly HashSet<Collider> colliders = new();
+        public readonly HashSet<Collider> colliders = new(100);
 
         private readonly VesselComponent vessel;
         private readonly List<Collider> _tempColliderStorage = new(100);
 
-        static readonly ProfilerMarker VesselSelfCollide_PartChange = new("VesselSelfCollide Part Changes");
+        static readonly ProfilerMarker VesselSelfCollide_AddPartAdditive = new("VesselSelfCollide.AddPartAdditive");
+        static readonly ProfilerMarker VesselSelfCollide_OnPartsChangedVessel = new("VesselSelfCollide.OnPartsChangedVessel");
 
         public VesselSelfCollide(VesselComponent vessel)
         {
@@ -36,14 +37,6 @@ namespace TurboMode.Models
             }
         }
 
-        public override void OnRemoved(SimulationObjectModel simulationObject, double universalTime)
-        {
-            if (SimulationObject.PartOwner != null)
-            {
-                SimulationObject.PartOwner.PartsRemoved -= OnPartsRemoved;
-            }
-        }
-
         private void WaitForPartOwner(Type type, ObjectComponent component)
         {
             if (component is PartOwnerComponent po)
@@ -60,11 +53,13 @@ namespace TurboMode.Models
 
         public void OnPartsChangedVessel(List<PartComponent> parts, bool adding)
         {
-            VesselSelfCollide_PartChange.Begin(SimulationObject.objVesselBehavior);
+            VesselSelfCollide_OnPartsChangedVessel.Begin(SimulationObject.objVesselBehavior);
+#if TURBOMODE_TRACE_EVENTS
             Debug.Log(string.Format("TM: {0} {1} parts for {2}",
                 adding ? "Adding" : "Removing",
                 parts.Count,
                 vessel.Name));
+#endif
 
             // not separating parts from each other on the assumption that each group
             // removed is going to the same vessel or debris
@@ -95,18 +90,21 @@ namespace TurboMode.Models
             }
 
             _tempColliderStorage.Clear();
-            VesselSelfCollide_PartChange.End();
+            VesselSelfCollide_OnPartsChangedVessel.End();
         }
 
         public void AddPartAdditive(PartBehavior part)
         {
-            VesselSelfCollide_PartChange.Begin(part);
+            VesselSelfCollide_AddPartAdditive.Begin(part);
+#if TURBOMODE_TRACE_EVENTS
             Debug.Log($"TM: Adding part {part} to {vessel}");
+#endif
 
             foreach (var addedPartCollider in part.Colliders)
             {
                 var addedPartColliderRigidbody = addedPartCollider.attachedRigidbody;
 
+                VesselSelfCollide_AddPartAdditive.Begin(part);
                 foreach (var existingCollider in colliders)
                 {
                     if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testMode)
@@ -114,20 +112,24 @@ namespace TurboMode.Models
                         Physics.IgnoreCollision(addedPartCollider, existingCollider, ignore: true);
                     }
                 }
+                VesselSelfCollide_AddPartAdditive.End();
             }
 
+            VesselSelfCollide_AddPartAdditive.Begin(part);
             // AddRange creates garbage.
             foreach (var addedPartCollider in part.Colliders)
             {
                 colliders.Add(addedPartCollider);
             }
-            VesselSelfCollide_PartChange.End();
+            VesselSelfCollide_AddPartAdditive.End();
+            VesselSelfCollide_AddPartAdditive.End();
         }
 
         /// <summary>
         /// Track colliders on this vessel, but don't touch the ignores.
-        /// 
-        /// Useful after vessel split, when colliders are already ignoring eachother from before the split.
+        ///
+        /// Useful after vessel split to initialize the new vessel,
+        /// when colliders are already ignoring eachother from before the split.
         /// </summary>
         /// <param name="part"></param>
         public void TrackPartsAfterSplit()

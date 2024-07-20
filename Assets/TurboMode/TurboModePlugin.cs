@@ -1,10 +1,10 @@
 using BepInEx;
+using BepInEx.Logging;
+using KSP.Logging;
 using MonoMod.RuntimeDetour;
 using System.Collections.Generic;
-using KSP.Logging;
-using UnityEngine.SceneManagement;
-using BepInEx.Logging;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace TurboMode
 {
@@ -14,7 +14,7 @@ namespace TurboMode
         private static readonly List<IDetour> hooks = new();
 
         // Disable game state interactions, and enable verification those would have done the right thing.
-        internal static bool testMode = true;
+        internal static bool testMode = false;
 
         private void Awake()
         {

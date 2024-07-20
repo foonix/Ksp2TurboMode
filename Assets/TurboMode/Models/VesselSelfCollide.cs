@@ -82,7 +82,7 @@ namespace TurboMode.Models
             {
                 foreach (var remainingCollider in colliders)
                 {
-                    if (!TurboModePlugin.testMode)
+                    if (!TurboModePlugin.testModeEnabled)
                     {
                         Physics.IgnoreCollision(remainingCollider, removedCollider, adding);
                     }
@@ -107,7 +107,7 @@ namespace TurboMode.Models
                 VesselSelfCollide_AddPartAdditive.Begin(part);
                 foreach (var existingCollider in colliders)
                 {
-                    if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testMode)
+                    if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testModeEnabled)
                     {
                         Physics.IgnoreCollision(addedPartCollider, existingCollider, ignore: true);
                     }

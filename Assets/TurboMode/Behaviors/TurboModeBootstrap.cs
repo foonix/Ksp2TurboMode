@@ -104,7 +104,7 @@ namespace TurboMode.Behaviors
                 }
             });
 
-            if (!TurboModePlugin.testMode)
+            if (!TurboModePlugin.testModeEnabled)
             {
                 GlobalLog.DisableFilter(LogFilter.Debug | LogFilter.General | LogFilter.Simulation);
             }

@@ -1,6 +1,6 @@
 using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
-using KSP.Logging;
 using MonoMod.RuntimeDetour;
 using System.Collections.Generic;
 using UnityEngine;
@@ -14,11 +14,19 @@ namespace TurboMode
         private static readonly List<IDetour> hooks = new();
 
         // Disable game state interactions, and enable verification those would have done the right thing.
-        internal static bool testMode = false;
+        internal static bool testModeEnabled = false;
+        public ConfigEntry<bool> testMode;
 
         private void Awake()
         {
             Logger.LogInfo($"TurboMode startup sequence initiated");
+
+            testMode = Config.Bind("General",
+                                    "TestMode",
+                                    false,
+                                    "Disable game state interactions, and enable verification those would have done the right thing.");
+            testModeEnabled = testMode.Value;
+
             SceneManager.sceneLoaded += (scene, mode) =>
             {
                 Logger.Log(LogLevel.Info, $"TM: Scene loaded {scene.name}");
@@ -28,10 +36,6 @@ namespace TurboMode
 
             hooks.AddRange(CollisionManagerPerformance.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
-
-            // not sure how this gets enabled debug mode, but it's a huge amount of time for each message
-            // Their logger api defaults to debug logging.
-            GlobalLog.DisableFilter(LogFilter.Debug | LogFilter.General | LogFilter.Simulation);
         }
     }
 }

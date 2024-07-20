@@ -49,7 +49,7 @@ namespace TurboMode
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
         {
-            if (!TurboModePlugin.testMode) { return; }
+            if (!TurboModePlugin.testModeEnabled) { return; }
 #if TURBOMODE_TRACE_EVENTS
             Debug.LogError($"Process called to OnCollisionIgnoreUpdate for {cm.name}");
 #endif

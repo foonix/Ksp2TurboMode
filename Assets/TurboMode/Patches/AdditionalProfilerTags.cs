@@ -1,5 +1,6 @@
 using KSP.Sim.Definitions;
 using KSP.Sim.impl;
+using KSP.Sim.ResourceSystem;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
@@ -14,6 +15,8 @@ namespace TurboMode
 
         private delegate void fixedUpdateSig(Action<UnityEngine.Object, float> orig, UnityEngine.Object contextObj, float deltaTime);
         private delegate void fixedUpdateSigNoContext(Action<System.Object, float> orig, System.Object contextObj, float deltaTime);
+        private delegate void spaceSimFixedUpdateSigNoContext(Action<System.Object, double, double> orig, System.Object contextObj, double universalTime, double deltaUniversalTime);
+        private delegate void voidMethod(Action<System.Object> orig, System.Object contextObj);
 
         private AdditionalProfilerTags(ProfilerMarker marker)
         {
@@ -22,6 +25,7 @@ namespace TurboMode
 
         public static List<IDetour> MakeHooks() => new()
             {
+                // GameInstance FixedUpdate
                 new AdditionalProfilerTags(new("PartBehaviour.OnFixedUpdate"))
                     .MakeHook(typeof(PartBehavior).GetMethod("OnFixedUpdate")),
                 new AdditionalProfilerTags(new("PartBehaviourModule.OnFixedUpdate"))
@@ -34,6 +38,28 @@ namespace TurboMode
                     .MakeHookNoContext(typeof(SpaceSimulation).GetMethod("OnFixedUpdate", new Type[] { typeof(float) })),
                 new AdditionalProfilerTags(new("VesselBehavior.OnFixedUpdate"))
                     .MakeHook(typeof(VesselBehavior).GetMethod("OnFixedUpdate")),
+
+                // SpaceSimulation.OnFixedUpdate component updates
+                new AdditionalProfilerTags(new("PartComponent.OnFixedUpdate"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(PartComponent).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("CelestialBodyComponent.OnFixedUpdate"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(CelestialBodyComponent).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("OrbiterComponent.OnFixedUpdate"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(OrbiterComponent).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("PartOwnerComponent.OnFixedUpdate"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(PartOwnerComponent).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("RigidbodyComponent.OnFixedUpdate"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(RigidbodyComponent).GetMethod("OnFixedUpdate")),
+                new AdditionalProfilerTags(new("VesselComponent.OnFixedUpdate"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(VesselComponent).GetMethod("OnFixedUpdate")),
+
+                // PartOwnerComponent FixedUpdate sub-functions
+                new AdditionalProfilerTags(new("PartOwnerComponent.UpdateMassStats"))
+                    .MakeWrapVoid(typeof(PartOwnerComponent).GetMethod("UpdateMassStats")),
+                new AdditionalProfilerTags(new("PartOwnerComponent.CalculatePhysicsStats"))
+                    .MakeWrapVoid(typeof(PartOwnerComponent).GetMethod("CalculatePhysicsStats")),
+                new AdditionalProfilerTags(new("ResourceFlowRequestManager.UpdateFlowRequests"))
+                    .MakeSpaceSimulationFixedUpdate(typeof(ResourceFlowRequestManager).GetMethod("UpdateFlowRequests")),
             };
 
         private void WrapFixedUpdate(Action<UnityEngine.Object, float> orig, UnityEngine.Object contextObj, float deltaTime)
@@ -50,8 +76,32 @@ namespace TurboMode
             marker.End();
         }
 
+        private void WrapVoidMethod(Action<System.Object> orig, System.Object contextObj)
+        {
+            marker.Begin();
+            orig(contextObj);
+            marker.End();
+        }
+
+        private void WrapSpaceSimulationFixedUpdate(
+            Action<System.Object, double, double> orig,
+            System.Object contextObj,
+            double universalTime,
+            double deltaUniversalTime)
+        {
+            marker.Begin();
+            orig(contextObj, universalTime, deltaUniversalTime);
+            marker.End();
+        }
+
         private Hook MakeHook(MethodInfo source) => new(source, (fixedUpdateSig)WrapFixedUpdate);
 
         private Hook MakeHookNoContext(MethodInfo source) => new(source, (fixedUpdateSigNoContext)WrapFixedUpdateNoContext);
+
+        private Hook MakeSpaceSimulationFixedUpdate(MethodInfo source)
+            => new(source, (spaceSimFixedUpdateSigNoContext)WrapSpaceSimulationFixedUpdate);
+
+        private Hook MakeWrapVoid(MethodInfo source)
+            => new(source, (voidMethod)WrapVoidMethod);
     }
 }

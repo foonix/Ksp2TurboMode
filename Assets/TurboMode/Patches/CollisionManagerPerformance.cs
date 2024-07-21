@@ -74,12 +74,18 @@ namespace TurboMode
 #endif
 
                 var simObj = msg.NewVesselBehavior.SimObjectComponent.SimulationObject;
-                if (!simObj.TryFindComponent<VesselSelfCollide>(out var _))
+                if (!simObj.TryFindComponent<VesselSelfCollide>(out var vsc))
                 {
                     msg.NewVesselBehavior.SimObjectComponent.SimulationObject.AddComponent(
-                        new VesselSelfCollide(msg.NewVesselBehavior.SimObjectComponent),
+                        vsc = new VesselSelfCollide(msg.NewVesselBehavior.SimObjectComponent),
                         0 // fixme
                         );
+                    // I don't know of a case yet where VesselBehaviorInitializedMessage
+                    // is called on a vessel that isn't already had one of the other messages I'm handling,
+                    // so I'm assuming this is a broken off part (or tree thereof) that got promoted to a new vessel.
+                    // In that case just track the colliders because they already ignore eachother.
+                    // That way if they split again they can be properly split using the PartOwner events.
+                    vsc.TrackPartsAfterSplit();
                 }
             });
 
@@ -128,6 +134,29 @@ namespace TurboMode
                     vsc.TrackPartsAfterSplit();
                 }
             });
+
+#if TURBOMODE_TRACE_EVENTS
+            gameInstance.Messages.Subscribe<PartDetachedMessage>((message) =>
+            {
+                var msg = message as PartDetachedMessage;
+                Debug.Log($"TM: Part detached {msg.PartBehavior} ({Time.frameCount})");
+            });
+            gameInstance.Messages.Subscribe<PartJointBroken>((message) =>
+            {
+                var msg = message as PartJointBroken;
+                Debug.Log($"TM: Joint broken {msg.PartBehavior} {msg.OtherPartBehavior} ({Time.frameCount})");
+            });
+            gameInstance.Messages.Subscribe<PartDestroyedMessage>((message) =>
+            {
+                var msg = message as PartDestroyedMessage;
+                Debug.Log($"TM: Part destroyed {msg.PartBehavior} ({Time.frameCount})");
+            });
+            gameInstance.Messages.Subscribe<PartCrashedMessage>((message) =>
+            {
+                var msg = message as PartCrashedMessage;
+                Debug.Log($"TM: Part crashed {msg.PartBehavior} ({Time.frameCount})");
+            });
+#endif
         }
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)

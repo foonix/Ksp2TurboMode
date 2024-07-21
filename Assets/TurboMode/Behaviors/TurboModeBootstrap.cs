@@ -99,8 +99,9 @@ namespace TurboMode.Behaviors
                         vsc = new VesselSelfCollide(msg.VesselOne.SimObjectComponent),
                         0 // fixme
                         );
+                    // last resort to ensure things are correct.
+                    vsc.FindNewColliders();
                 }
-                vsc.FindNewColliders();
             });
 
             // After undock or staging, remainingVessel was the original vessel,

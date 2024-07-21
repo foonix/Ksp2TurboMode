@@ -34,6 +34,7 @@ namespace TurboMode.Models
         static readonly ProfilerMarker VesselSelfCollide_OnPartsChangedVessel = new("VesselSelfCollide.OnPartsChangedVessel");
         static readonly ProfilerMarker VesselSelfCollide_TrackAfterSplit = new("VesselSelfCollide.TrackAfterSplit");
         static readonly ProfilerMarker VesselSelfCollide_FindNewColliders = new("VesselSelfCollide.FindNewColliders");
+        static readonly ProfilerMarker VesselSelfCollide_MergeCombinedVesselColliders = new("VesselSelfCollide.MergeCombinedVesselColliders");
 
         public VesselSelfCollide(VesselComponent vessel)
         {
@@ -169,6 +170,7 @@ namespace TurboMode.Models
         // This can be O(n^2) if no colliders were known, so it's the last resort.
         public void FindNewColliders()
         {
+            VesselSelfCollide_FindNewColliders.Begin();
 #if TURBOMODE_TRACE_EVENTS
             int existingColliderCount = colliders.Count;
 #endif
@@ -202,6 +204,36 @@ namespace TurboMode.Models
             Debug.Log($"TM: Added {_tempColliderStorage.Count} colliders to existing {existingColliderCount} for {vessel}");
 #endif
             _tempColliderStorage.Clear();
+            VesselSelfCollide_FindNewColliders.End();
+        }
+
+        // Make parts sets from separate vessels ignore each other,
+        // assuming that parts on the source vessels were already ignoring eachother.
+        public void MergeCombinedVesselColliders(HashSet<Collider> left, HashSet<Collider> right)
+        {
+            VesselSelfCollide_MergeCombinedVesselColliders.Begin();
+
+            // Assuming none of the parts on separate vessels share the same Rigidbody or are the same part
+            // That would be weird.
+            foreach (var leftCollider in left)
+            {
+                foreach (var rightCollider in right)
+                {
+                    if (!TurboModePlugin.testModeEnabled)
+                    {
+                        Physics.IgnoreCollision(leftCollider, rightCollider, ignore: true);
+                    }
+                }
+            }
+            colliders.EnsureCapacity(left.Count + right.Count);
+            colliders.UnionWith(left);
+            colliders.UnionWith(right);
+
+#if TURBOMODE_TRACE_EVENTS
+            Debug.Log($"TM: Created merged vessel {vessel} with {colliders.Count} colliders ({left.Count}+{right.Count}) ({Time.frameCount})");
+#endif
+
+            VesselSelfCollide_MergeCombinedVesselColliders.End();
         }
 
         private static PartBehavior GetPartBehavior(PartComponent modelComponent)

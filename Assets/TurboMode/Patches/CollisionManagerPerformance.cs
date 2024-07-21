@@ -1,6 +1,4 @@
 using KSP.Sim.impl;
-using Mono.Cecil.Cil;
-using MonoMod.Cil;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections;
@@ -8,7 +6,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using TurboMode.Models;
-using Unity.Profiling;
 using UnityEngine;
 
 namespace TurboMode
@@ -19,12 +16,17 @@ namespace TurboMode
         {
             new Hook(
                 typeof(CollisionManager).GetMethod("OnCollisionIgnoreUpdate"),
-                (Action<Action<CollisionManager>, CollisionManager>)LogMissedCall
-                ),
+                (Action<Action<CollisionManager>, CollisionManager>)LogMissedCall),
             new Hook(
                 typeof(CollisionManager).GetMethod("UpdatePartCollisionIgnores", BindingFlags.Instance | BindingFlags.NonPublic),
-                (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck
-                ),
+                (Action<Action<CollisionManager>, CollisionManager>)MissingColliderCheck),
+            new Hook(
+                typeof(SpaceSimulation).GetMethod("CreateCombinedVesselSimObject"),
+                (Func<
+                    Func<SpaceSimulation, VesselComponent, PartComponent, VesselComponent, PartComponent, SimulationObjectModel>,
+                    SpaceSimulation, VesselComponent, PartComponent, VesselComponent, PartComponent,
+                    SimulationObjectModel
+                    >)MergeCombinedVessels),
         };
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
@@ -102,6 +104,27 @@ namespace TurboMode
                     }
                 }
             }
+        }
+
+        private static SimulationObjectModel MergeCombinedVessels(
+            Func<SpaceSimulation, VesselComponent, PartComponent, VesselComponent, PartComponent, SimulationObjectModel> orig,
+            SpaceSimulation sim,
+            VesselComponent masterVessel, PartComponent masterAttachPart,
+            VesselComponent otherVessel, PartComponent otherAttachPart)
+        {
+            Debug.Log($"TM: Merging colliders for {masterVessel} {otherVessel}");
+
+            var masterColliders = masterVessel.SimulationObject.FindComponent<VesselSelfCollide>().colliders;
+            var otherColliders = otherVessel.SimulationObject.FindComponent<VesselSelfCollide>().colliders;
+
+            var newSimObj = orig(sim, masterVessel, masterAttachPart, otherVessel, otherAttachPart);
+
+            var vsc = new VesselSelfCollide(newSimObj.Vessel);
+            newSimObj.AddComponent(vsc, 0f);
+
+            vsc.MergeCombinedVesselColliders(masterColliders, otherColliders);
+
+            return newSimObj;
         }
     }
 }

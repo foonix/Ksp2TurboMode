@@ -1,0 +1,19 @@
+{
+    "name": "TurboMode.Editor",
+    "rootNamespace": "",
+    "references": [
+        "GUID:c4ba81d2795769f428b089c6e1ade505",
+        "GUID:280569ac301428d4d950fdf647900922"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": false,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

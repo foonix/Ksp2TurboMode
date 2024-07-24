@@ -135,7 +135,8 @@ PlayerSettings:
   loadStoreDebugModeEnabled: 0
   bundleVersion: 0.2.2.0
   preloadedAssets:
-  - {fileID: 5910, guid: 4747d1bc6be614b91adda1a9be1e01dd, type: 2}
+  - {fileID: 0}
+  - {fileID: 0}
   metroInputSource: 1
   wsaTransparentSwapchain: 0
   m_HolographicPauseOnTrackingLoss: 1
@@ -156,7 +157,7 @@ PlayerSettings:
   androidMaxAspectRatio: 2.1
   applicationIdentifier:
     Android: 
-    Standalone: unity.Intercept Games.Kerbal Space Program 2
+    Standalone: com.Intercept-Games.Kerbal-Space-Program-2
     VisionOS: 
     iPhone: 
     tvOS: 
@@ -647,7 +648,7 @@ PlayerSettings:
     PS5: KSP2_X64;TK_ADDRESSABLE
     QNX: KSP2_X64;TK_ADDRESSABLE
     Stadia: KSP2_X64;TK_ADDRESSABLE
-    Standalone: KSP2_X64;TK_ADDRESSABLE
+    Standalone: KSP2_X64;TK_ADDRESSABLE;UNITY_DISABLE_AUTOMATIC_SYSTEM_BOOTSTRAP
     VisionOS: KSP2_X64;TK_ADDRESSABLE
     WebGL: KSP2_X64;TK_ADDRESSABLE
     XboxOne: KSP2_X64;TK_ADDRESSABLE
@@ -674,7 +675,7 @@ PlayerSettings:
     tvOS: 1
   incrementalIl2cppBuild: {}
   suppressCommonWarnings: 1
-  allowUnsafeCode: 0
+  allowUnsafeCode: 1
   useDeterministicCompilation: 1
   additionalIl2CppArgs: 
   scriptingRuntimeVersion: 1

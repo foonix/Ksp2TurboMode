@@ -1,5 +1,6 @@
 using KSP.Game;
 using KSP.Logging;
+using KSP.Messages;
 using UnityEngine;
 
 namespace TurboMode.Behaviors
@@ -36,6 +37,12 @@ namespace TurboMode.Behaviors
             {
                 GlobalLog.DisableFilter(LogFilter.Debug | LogFilter.General | LogFilter.Simulation);
             }
+
+            gameInstance.Messages.Subscribe<GameLoadFinishedMessage>((message) =>
+            {
+                Debug.Log($"TM: Game load finished");
+                new UniverseSim(GameManager.Instance.Game);
+            });
 
             gameObject.SetActive(false); // suppress Update() overhead
         }

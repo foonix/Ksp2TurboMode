@@ -90,6 +90,8 @@ namespace TurboMode.Editor
             {
                 File.Delete(burstedDest);
             }
+
+            Debug.Log("TurboMode build complete");
         }
 
         private static void CopyOverwrite(string src, string dest)

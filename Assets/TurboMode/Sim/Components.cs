@@ -17,7 +17,7 @@ namespace TurboMode.Sim
 
         public Vessel(SimulationObjectModel obj)
         {
-            guid = obj.Vessel.GlobalId;
+            guid = obj.Part.PartOwner.SimulationObject.Vessel.GlobalId;
         }
 
         public readonly bool Equals(Vessel other) => guid == other.guid;

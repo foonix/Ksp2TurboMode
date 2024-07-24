@@ -14,41 +14,41 @@ namespace TurboMode
     {
         readonly UniverseModel universeModel;
         readonly World world;
-
-        
+        readonly GameInstance gameInstance;
 
         static readonly ProfilerMarker UniverseSim_OnFixedUpdate = new("UniverseSim.OnFixedUpdate");
 
         public UniverseSim(GameInstance gameInstance)
         {
+            this.gameInstance = gameInstance;
             universeModel = gameInstance.UniverseModel;
             universeModel.onVesselAdded += OnVesselAdded;
-            try
+            gameInstance.RegisterFixedUpdate(this);
+
+            world = new World("Ksp2TurboMode");
+            Debug.Log("TM: Entity world created");
+            var modelRefEnt = world.EntityManager.CreateSingleton<UniverseRef>("UniverseModelRef");
+            var modelRefData = new UniverseRef()
             {
-                // The way Burst stores compiled code causes exceptions if it
-                // can't find the compiled code in lib_burst_generated.dll
-                // So turn off burst comiple but only when running our own stuff.
-                //Unity.Burst.BurstCompiler.Options.EnableBurstCompilation = false;
-                world = new World("Ksp2TurboMode");
-                Debug.Log("TM: Entity world created");
-                var modelRefEnt = world.EntityManager.CreateSingleton<UniverseRef>("UniverseModelRef");
-                var modelRefData = new UniverseRef()
-                {
-                    universeModel = universeModel,
-                };
-                world.EntityManager.SetComponentData(modelRefEnt, modelRefData);
-                InitSystems();
-                InitFromExistingUniverse(modelRefData);
-            }
-            finally
-            {
-                //Unity.Burst.BurstCompiler.Options.EnableBurstCompilation = true;
-            }
+                universeModel = universeModel,
+            };
+            world.EntityManager.SetComponentData(modelRefEnt, modelRefData);
+            InitSystems();
+            InitFromExistingUniverse(modelRefData);
+
+            // prevent crash on quit
+            Application.quitting += Dispose;
 
             Debug.Log("TM: World initialized");
         }
 
-        public void Dispose() => world?.Dispose();
+        public void Dispose()
+        {
+            if (gameInstance != null)
+                gameInstance.UnregisterFixedUpdate(this);
+            world?.Dispose();
+            Application.quitting -= Dispose;
+        }
 
         ~UniverseSim() => Dispose();
 
@@ -84,13 +84,11 @@ namespace TurboMode
             try
             {
                 UniverseSim_OnFixedUpdate.Begin();
-                //Unity.Burst.BurstCompiler.Options.EnableBurstCompilation = false;
 
                 OnFixedUpdateImpl(deltaTime);
             }
             finally
             {
-                //Unity.Burst.BurstCompiler.Options.EnableBurstCompilation = true;
                 UniverseSim_OnFixedUpdate.End();
             }
         }

@@ -73,25 +73,28 @@ namespace TurboMode.Editor
                         File.Delete(managedPdbDest);
                     }
                 }
-            }
 
-            // Copy Burst library
-            var burstedSrc = Path.Combine(buildFolder, $"{modName}_Data/Plugins/x86_64/lib_burst_generated.dll");
-            // If the file extension is .dll, SpaceWarp and BepInEx will log exceptions.
-            var burstedDest = Path.Combine(tmPluginDir, TurboModePlugin.burstCodeAssemblyName);
-            CopyOverwrite(burstedSrc, burstedDest);
+                // Copy Burst library
+                var burstedSrc = Path.Combine(buildFolder, $"{modName}_Data/Plugins/x86_64/lib_burst_generated.dll");
+                // If the file extension is .dll, SpaceWarp and BepInEx will log exceptions.
+                var burstedDest = Path.Combine(tmPluginDir, TurboModePlugin.burstCodeAssemblyName);
+                CopyOverwrite(burstedSrc, burstedDest);
 
-            var burstPdbDest = burstedDest.Replace(".dll", ".pdb");
-            if (debug)
-            {
-                CopyOverwrite(burstedSrc.Replace(".dll", ".pdb"), burstPdbDest);
+                var burstPdbDest = burstedDest.Replace(".dll", ".pdb");
+                if (debug)
+                {
+                    CopyOverwrite(burstedSrc.Replace(".dll", ".pdb"), burstPdbDest);
+                }
+                else
+                {
+                    File.Delete(burstedDest);
+                }
+                Debug.Log("TurboMode build complete");
             }
             else
             {
-                File.Delete(burstedDest);
+                Debug.LogError("TurboMode build failed");
             }
-
-            Debug.Log("TurboMode build complete");
         }
 
         private static void CopyOverwrite(string src, string dest)

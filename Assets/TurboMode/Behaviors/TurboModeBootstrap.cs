@@ -1,6 +1,8 @@
 using KSP.Game;
 using KSP.Logging;
 using KSP.Messages;
+using KSP.Sim.impl;
+using TurboMode.Sim;
 using UnityEngine;
 
 namespace TurboMode.Behaviors
@@ -8,6 +10,12 @@ namespace TurboMode.Behaviors
     public class TurboModeBootstrap : MonoBehaviour
     {
         GameInstance gameInstance;
+        MessageCenter messageCenter;
+
+        SpaceSimulation spaceSim;
+        SpaceSimulationMonitor spaceSimMonitor;
+
+        bool initialized;
 
         private void Start()
         {
@@ -17,34 +25,55 @@ namespace TurboMode.Behaviors
 
         void Update()
         {
-            if (!GameManager.Instance || !GameManager.Instance.Game)
+            if (!initialized)
             {
-                return;
+                if (!GameManager.Instance || !GameManager.Instance.Game)
+                {
+                    return;
+                }
+
+                gameInstance = GameManager.Instance.Game;
+
+                if (!gameInstance.IsInitialized)
+                {
+                    return;
+                }
+
+                Debug.Log("TM: bootstrapping gameInstance events");
+
+                CollisionManagerPerformance.OnGameInstanceInitialized(gameInstance);
+
+                if (!TurboModePlugin.testModeEnabled)
+                {
+                    GlobalLog.DisableFilter(LogFilter.Debug | LogFilter.General | LogFilter.Simulation);
+                }
+
+                gameInstance.Messages.Subscribe<GameLoadFinishedMessage>((message) =>
+                {
+                    Debug.Log($"TM: Game load finished");
+                    new UniverseSim(GameManager.Instance.Game);
+                });
+
+                messageCenter = gameInstance.Messages;
+                initialized = true;
+            }
+            else
+            {
+                if (!gameInstance)
+                {
+                    Debug.Log($"TM: Game instance is gone");
+                }
+                if (gameInstance.Messages != messageCenter)
+                {
+                    Debug.Log($"TM: Message center changed");
+                }
             }
 
-            gameInstance = GameManager.Instance.Game;
-
-            if (!gameInstance.IsInitialized)
+            if (initialized && gameInstance.SpaceSimulation != spaceSim && gameInstance.SpaceSimulation is not null)
             {
-                return;
+                spaceSimMonitor = new SpaceSimulationMonitor(gameInstance.SpaceSimulation);
+                spaceSim = gameInstance.SpaceSimulation;
             }
-
-            Debug.Log("TM: bootstrapping gameInstance events");
-
-            CollisionManagerPerformance.OnGameInstanceInitialized(gameInstance);
-
-            if (!TurboModePlugin.testModeEnabled)
-            {
-                GlobalLog.DisableFilter(LogFilter.Debug | LogFilter.General | LogFilter.Simulation);
-            }
-
-            gameInstance.Messages.Subscribe<GameLoadFinishedMessage>((message) =>
-            {
-                Debug.Log($"TM: Game load finished");
-                new UniverseSim(GameManager.Instance.Game);
-            });
-
-            gameObject.SetActive(false); // suppress Update() overhead
         }
     }
 }

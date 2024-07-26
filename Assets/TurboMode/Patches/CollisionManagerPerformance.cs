@@ -161,10 +161,11 @@ namespace TurboMode
 
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
         {
-            if (!TurboModePlugin.testModeEnabled) { return; }
 #if TURBOMODE_TRACE_EVENTS
             Debug.LogError($"Process called to OnCollisionIgnoreUpdate for {cm.name}");
 #endif
+            if (!TurboModePlugin.testModeEnabled) { return; }
+
             // the goal here is to obviate this, but leaving it on to check
             // if my code is not processing colliders it should be.
             orig(cm);

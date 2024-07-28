@@ -25,6 +25,16 @@ namespace TurboMode
 
         public static List<IDetour> MakeHooks() => new()
             {
+                // GameInstance Update()
+                new AdditionalProfilerTags(new("SpaceSimulation.OnUpdate"))
+                    .MakeHookNoContext(typeof(SpaceSimulation).GetMethod("IUpdate.OnUpdate", BindingFlags.Instance | BindingFlags.NonPublic)),
+                new AdditionalProfilerTags(new("VesselBehavior.OnUpdate"))
+                    .MakeHook(typeof(VesselBehavior).GetMethod("OnUpdate")),
+                new AdditionalProfilerTags(new("PartBehavior.OnUpdate"))
+                    .MakeHook(typeof(PartBehavior).GetMethod("IUpdate.OnUpdate", BindingFlags.Instance | BindingFlags.NonPublic)),
+                new AdditionalProfilerTags(new("RigidbodyBehavior.OnUpdate"))
+                    .MakeHook(typeof(RigidbodyBehavior).GetMethod("OnUpdate")),
+
                 // GameInstance FixedUpdate
                 new AdditionalProfilerTags(new("PartBehaviour.OnFixedUpdate"))
                     .MakeHook(typeof(PartBehavior).GetMethod("OnFixedUpdate")),

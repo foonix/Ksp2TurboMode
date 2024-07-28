@@ -26,6 +26,7 @@ namespace TurboMode
 
         public ConfigEntry<bool> testModeConfig;
         public ConfigEntry<bool> enableVesselSelfCollideConfig;
+        public ConfigEntry<bool> enableSelectivePhysicsSync;
         public ConfigEntry<bool> enableEcsSimConfig;
 
         private void Awake()
@@ -44,11 +45,17 @@ namespace TurboMode
                 true,
                 "Speeds up loading/dock/undock operations for large part count vessels"
             );
+            enableSelectivePhysicsSync = Config.Bind(
+                "General",
+                "EnableSelectivePhysicsSync",
+                true,
+                "Disables Unity's Physics.autoSyncTransforms feature for certain operations unlikely to need it."
+            );
             enableEcsSimConfig = Config.Bind(
                 "General",
                 "EnableEcsSimulation",
                 false,
-                "Use Unity ECS for simulation (background) updates.  DOES NOT WORK YET."
+                "Use Unity ECS for simulation (\"background\") updates.  DOES NOT WORK YET."
             );
 
             testModeEnabled = testModeConfig.Value;
@@ -62,7 +69,10 @@ namespace TurboMode
                     new GameObject("TurboModeBootstrap", typeof(Behaviors.TurboModeBootstrap));
             };
 
-            hooks.AddRange(CollisionManagerPerformance.MakeHooks());
+            if (enableVesselSelfCollideConfig.Value)
+                hooks.AddRange(CollisionManagerPerformance.MakeHooks());
+            if (enableSelectivePhysicsSync.Value)
+                hooks.AddRange(SelectivePhysicsAutoSync.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);

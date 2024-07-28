@@ -21,17 +21,39 @@ namespace TurboMode
 
         // Disable game state interactions, and enable verification those would have done the right thing.
         internal static bool testModeEnabled = false;
-        public ConfigEntry<bool> testMode;
+        public static bool enableVesselSelfCollide = true;
+        public static bool enableEcsSim = false;
+
+        public ConfigEntry<bool> testModeConfig;
+        public ConfigEntry<bool> enableVesselSelfCollideConfig;
+        public ConfigEntry<bool> enableEcsSimConfig;
 
         private void Awake()
         {
             Logger.LogInfo($"TurboMode startup sequence initiated");
 
-            testMode = Config.Bind("General",
-                                    "TestMode",
-                                    false,
-                                    "Disable game state interactions, and enable verification those would have done the right thing.");
-            testModeEnabled = testMode.Value;
+            testModeConfig = Config.Bind(
+                "General",
+                "TestMode",
+                false,
+                "Disable game state interactions, and enable verification those would have done the right thing."
+            );
+            enableVesselSelfCollideConfig = Config.Bind(
+                "General",
+                "EnableVesselSelfCollideOptimization",
+                true,
+                "Speeds up loading/dock/undock operations for large part count vessels"
+            );
+            enableEcsSimConfig = Config.Bind(
+                "General",
+                "EnableEcsSimulation",
+                false,
+                "Use Unity ECS for simulation (background) updates.  DOES NOT WORK YET."
+            );
+
+            testModeEnabled = testModeConfig.Value;
+            enableVesselSelfCollide = enableVesselSelfCollideConfig.Value;
+            enableEcsSim = enableEcsSimConfig.Value;
 
             SceneManager.sceneLoaded += (scene, mode) =>
             {

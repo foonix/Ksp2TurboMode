@@ -41,7 +41,10 @@ namespace TurboMode.Behaviors
 
                 Debug.Log("TM: bootstrapping gameInstance events");
 
-                CollisionManagerPerformance.OnGameInstanceInitialized(gameInstance);
+                if (TurboModePlugin.enableVesselSelfCollide)
+                {
+                    CollisionManagerPerformance.OnGameInstanceInitialized(gameInstance);
+                }
 
                 if (!TurboModePlugin.testModeEnabled)
                 {
@@ -51,7 +54,10 @@ namespace TurboMode.Behaviors
                 gameInstance.Messages.Subscribe<GameLoadFinishedMessage>((message) =>
                 {
                     Debug.Log($"TM: Game load finished");
-                    new UniverseSim(GameManager.Instance.Game);
+                    if (TurboModePlugin.enableEcsSim)
+                    {
+                        new UniverseSim(GameManager.Instance.Game);
+                    }
                 });
 
                 messageCenter = gameInstance.Messages;

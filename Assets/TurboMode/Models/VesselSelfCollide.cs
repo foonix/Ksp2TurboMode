@@ -1,3 +1,5 @@
+using KSP.Game;
+using KSP.Modules;
 using KSP.Sim;
 using KSP.Sim.Converters;
 using KSP.Sim.impl;
@@ -17,9 +19,12 @@ namespace TurboMode.Models
     // PhysicsSettings.ENABLE_PART_TO_PART_COLLISIONS is never true.
     // That setting enables parts on the same vehicle to collide with each other unless the collider has the
     // NoSameVesselCollision tag.  As far as I know, this isn't used.
+    // Matching the exact behavior of when the game makes colliders ignore each other is problematic due to
+    // Rube Goldberg setup process of creating the collider and then later creating Rigidbody.
 
     // === Optimizations ===
     // Simplify by dropping support for part-to-part collisions, ignore the related tag, and don't track parts individually.
+    // Make every part ignore every other part so that we don't have to redo things if Rigidbody changes.
     // Avoid Transform.Find*() operations.  Use available data such as PartBehavior.Colliders instead.
     // Use sets to push wort-case closer to O(n * log(m)), minimising calls to Physics.IgnoreCollision().
     public class VesselSelfCollide : ObjectComponent
@@ -30,6 +35,7 @@ namespace TurboMode.Models
         private readonly VesselComponent vessel;
         private readonly List<Collider> _tempColliderStorage = new(100);
 
+        static readonly ProfilerMarker VesselSelfCollide_AddCollider = new("VesselSelfCollide.AddCollider");
         static readonly ProfilerMarker VesselSelfCollide_AddPartAdditive = new("VesselSelfCollide.AddPartAdditive");
         static readonly ProfilerMarker VesselSelfCollide_OnPartsChangedVessel = new("VesselSelfCollide.OnPartsChangedVessel");
         static readonly ProfilerMarker VesselSelfCollide_TrackAfterSplit = new("VesselSelfCollide.TrackAfterSplit");
@@ -117,14 +123,14 @@ namespace TurboMode.Models
             Debug.Log($"TM: Adding part {part} to {vessel}");
 #endif
 
+            WaitForAdditionalColliders.WaitOn(this, part);
+
             foreach (var addedPartCollider in part.Colliders)
             {
-                var addedPartColliderRigidbody = addedPartCollider.attachedRigidbody;
-
                 VesselSelfCollide_AddPartAdditive.Begin(part);
                 foreach (var existingCollider in colliders)
                 {
-                    if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testModeEnabled)
+                    if (!TurboModePlugin.testModeEnabled)
                     {
                         Physics.IgnoreCollision(addedPartCollider, existingCollider, ignore: true);
                     }
@@ -177,6 +183,7 @@ namespace TurboMode.Models
             foreach (var part in SimulationObject.PartOwner.Parts)
             {
                 var partBehavior = Game.SpaceSimulation.ModelViewMap.FromModel(part.SimulationObject).Part;
+                WaitForAdditionalColliders.WaitOn(this, partBehavior);
                 foreach (var addedCollider in partBehavior.Colliders)
                 {
                     if (colliders.Contains(addedCollider))
@@ -185,10 +192,9 @@ namespace TurboMode.Models
                     }
 
                     _tempColliderStorage.Add(addedCollider);
-                    var addedPartColliderRigidbody = addedCollider.attachedRigidbody;
                     foreach (var existingCollider in colliders)
                     {
-                        if (!System.Object.ReferenceEquals(addedPartColliderRigidbody, existingCollider.attachedRigidbody) && !TurboModePlugin.testModeEnabled)
+                        if (!TurboModePlugin.testModeEnabled)
                         {
                             Physics.IgnoreCollision(addedCollider, existingCollider, ignore: true);
                         }
@@ -213,7 +219,7 @@ namespace TurboMode.Models
         {
             VesselSelfCollide_MergeCombinedVesselColliders.Begin();
 
-            // Assuming none of the parts on separate vessels share the same Rigidbody or are the same part
+            // Assuming none of the parts on separate vessels share the same are the same part
             // That would be weird.
             foreach (var leftCollider in left)
             {
@@ -236,12 +242,33 @@ namespace TurboMode.Models
             VesselSelfCollide_MergeCombinedVesselColliders.End();
         }
 
+        public void AddCollider(Collider collider)
+        {
+            VesselSelfCollide_AddCollider.Begin();
+
+            if (colliders.Contains(collider))
+            {
+                return;
+            }
+
+            foreach (var existingCollider in colliders)
+            {
+                if (!TurboModePlugin.testModeEnabled)
+                {
+                    Physics.IgnoreCollision(existingCollider, collider, ignore: true);
+                }
+            }
+
+            VesselSelfCollide_AddCollider.End();
+        }
+
         private static PartBehavior GetPartBehavior(PartComponent modelComponent)
         {
             SimulationObjectModel model = modelComponent.SimulationObject;
             return ((ISimulationObjectView)modelComponent.Game.SpaceSimulation.ModelViewMap.FromModel(model))?.Part;
         }
 
+        #region ObjectComponent required overrides
         [TypeConverterIgnore]
         public override Type Type => typeof(VesselSelfCollide);
 
@@ -258,5 +285,66 @@ namespace TurboMode.Models
         public override bool ValidateState(object stateData, ISimulationModelMap simulationModelMap) => true;
 
         public override object SetState(object stateData, ISimulationModelMap simulationModelMap) => null;
+        #endregion
+
+        private class WaitForAdditionalColliders : IFixedUpdate
+        {
+            private VesselSelfCollide vsc;
+            private Module_Fairing fairing;
+
+            public static void WaitOn(VesselSelfCollide vsc, PartBehavior partBehavior)
+            {
+                // In the base game, fairings are the only thing I've found so far that creates colliders
+                // some potentially unknown frames later after PartBehaviourInitializedMessage. 
+                // I think there is potentially a bug in the game.. CollisionManager seems to happen
+                // to catch these new colliders by coincidence from updates triggered by PhysX unpack,
+                // but only if Module_Fairing finishes before then.  (Which it seems to usually do, but might not.)
+                if (!partBehavior.Modules.TryGetValue(typeof(Module_Fairing), out var fairing))
+                {
+                    return;
+                }
+
+                var fairingModule = fairing as Module_Fairing;
+
+                // Short circuit if fairing is already initialized
+                if (fairingModule.ClosedColliders?.Count > 0)
+                {
+                    AddClosedColliders(vsc, fairingModule);
+                    return;
+                }
+
+                var waiter = new WaitForAdditionalColliders()
+                {
+                    vsc = vsc,
+                    fairing = fairing as Module_Fairing,
+                };
+
+                GameManager.Instance.Game.RegisterFixedUpdate(waiter);
+            }
+
+            public void OnFixedUpdate(float deltaTime)
+            {
+                if (fairing.ClosedColliders?.Count == 0)
+                {
+                    return;
+                }
+
+#if TURBOMODE_TRACE_EVENTS
+                Debug.Log($"TM: Adding {fairing.ClosedColliders.Count} colliders from {fairing.part} on {fairing.part.vessel} ({Time.frameCount})");
+#endif
+
+                AddClosedColliders(vsc, fairing);
+
+                GameManager.Instance.Game.UnregisterFixedUpdate(this);
+            }
+
+            private static void AddClosedColliders(VesselSelfCollide vsc, Module_Fairing fairing)
+            {
+                foreach (var collider in fairing.ClosedColliders)
+                {
+                    vsc.AddCollider(collider);
+                }
+            }
+        }
     }
 }

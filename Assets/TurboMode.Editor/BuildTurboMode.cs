@@ -87,7 +87,7 @@ namespace TurboMode.Editor
                 }
                 else
                 {
-                    File.Delete(burstedDest);
+                    File.Delete(burstPdbDest);
                 }
                 Debug.Log("TurboMode build complete");
             }

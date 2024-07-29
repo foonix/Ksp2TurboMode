@@ -91,6 +91,7 @@ namespace TurboMode.Models
                 var part = GetPartBehavior(partComponent);
                 if (!part) continue;
 
+                // even if the collider is already destroyed, try to remove the reference from the set.
                 foreach (var removingCollider in part.Colliders)
                 {
                     bool canged = adding ? colliders.Add(removingCollider) : colliders.Remove(removingCollider);
@@ -101,14 +102,30 @@ namespace TurboMode.Models
                 }
             }
 
-            foreach (var removedCollider in _tempColliderStorage)
+            List<Collider> pruneDestroyed = null;
+            foreach (var remainingCollider in colliders)
             {
-                foreach (var remainingCollider in colliders)
+                if (!remainingCollider)
                 {
-                    if (!TurboModePlugin.testModeEnabled)
+                    pruneDestroyed ??= new(4);
+                    pruneDestroyed.Add(remainingCollider);
+                    continue;
+                }
+
+                foreach (var removedCollider in _tempColliderStorage)
+                {
+                    if (removedCollider && !TurboModePlugin.testModeEnabled)
                     {
                         Physics.IgnoreCollision(remainingCollider, removedCollider, adding);
                     }
+                }
+            }
+
+            if (pruneDestroyed is not null)
+            {
+                foreach (var destroyed in pruneDestroyed)
+                {
+                    colliders.Remove(destroyed);
                 }
             }
 
@@ -125,10 +142,15 @@ namespace TurboMode.Models
 
             WaitForAdditionalColliders.WaitOn(this, part);
 
-            foreach (var addedPartCollider in part.Colliders)
+            foreach (var existingCollider in colliders)
             {
                 VesselSelfCollide_AddPartAdditive.Begin(part);
-                foreach (var existingCollider in colliders)
+                if (!existingCollider)
+                {
+                    _tempColliderStorage.Add(existingCollider);
+                    continue;
+                }
+                foreach (var addedPartCollider in part.Colliders)
                 {
                     if (!TurboModePlugin.testModeEnabled)
                     {
@@ -144,6 +166,11 @@ namespace TurboMode.Models
             {
                 colliders.Add(addedPartCollider);
             }
+            foreach (var destroyed in _tempColliderStorage)
+            {
+                colliders.Remove(destroyed);
+            }
+            _tempColliderStorage.Clear();
             VesselSelfCollide_AddPartAdditive.End();
             VesselSelfCollide_AddPartAdditive.End();
         }

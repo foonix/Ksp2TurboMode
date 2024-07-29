@@ -46,11 +46,6 @@ namespace TurboMode.Behaviors
                     CollisionManagerPerformance.OnGameInstanceInitialized(gameInstance);
                 }
 
-                if (!TurboModePlugin.testModeEnabled)
-                {
-                    GlobalLog.DisableFilter(LogFilter.Debug | LogFilter.General | LogFilter.Simulation);
-                }
-
                 gameInstance.Messages.Subscribe<GameLoadFinishedMessage>((message) =>
                 {
                     Debug.Log($"TM: Game load finished");

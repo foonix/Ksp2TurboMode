@@ -1,4 +1,5 @@
 using KSP.Game;
+using KSP.Sim.impl;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
@@ -16,18 +17,37 @@ namespace TurboMode
         public static List<IDetour> MakeHooks() => new()
         {
             // RigidbodyBehavior drive a large number of transform changes during GameInstance.Update().
-            // Things like raycast queries are a bad idea here anyway, because the IUpdate interface
-            // does not guarantee ordering.  
             new Hook(
-                typeof(GameInstance).GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic),
-                (Action<Action<System.Object>, System.Object>)DisablePhysicsAutoSyncThenSync
+                typeof(RigidbodyBehavior).GetMethod("OnUpdate"),
+                (Action<Action<System.Object, float>, System.Object, float>)RunWithoutAutosync
+                ),
+
+            // write-only, VFX transforms I think.
+            new Hook(
+                typeof(VesselBehavior).GetMethod("OnUpdate"),
+                (Action<Action<System.Object, float>, System.Object, float>)SyncAfter
+                ),
+
+            // SpaceSimulation updates are unordered, so things like update interdepended
+            // moves and raycast queries are a bad idea here anyway.
+            // But we do need to have current data because some objects do raycast against the
+            // Rigidbody/floating origin changes that happen just before this.
+            new Hook(
+                typeof(SpaceSimulation).GetMethod("IUpdate.OnUpdate", BindingFlags.Instance | BindingFlags.NonPublic),
+                (Action<Action<System.Object, float>, System.Object, float>)BookendSyncs
                 ),
 
             // UIManager seems to only do racast queries here.
             // Cut out the overhead in checking for updates triggered by Collider.Raycast().
             new Hook(
                 typeof(UIManager).GetMethod("LateUpdate", BindingFlags.Instance | BindingFlags.NonPublic),
-                (Action<Action<System.Object>, System.Object>)DisablePhysicsAutoSync
+                (Action<Action<System.Object>, System.Object>)RunWithoutAutosync
+                ),
+
+            // Just reads the positions of colliders.
+            new Hook(
+                typeof(InteractSystem).GetMethod("Update", BindingFlags.Instance | BindingFlags.NonPublic),
+                (Action<Action<System.Object>, System.Object>)BookendSyncs
                 ),
 
             // These update the visual position of wheels.
@@ -38,21 +58,28 @@ namespace TurboMode
             // But they're not calculated in any ordered way anyway, so they already wouldin't be perfectly accurate.
             new Hook(
                 typeof(VehicleBase).GetMethod("LateUpdate", BindingFlags.Instance | BindingFlags.NonPublic),
-                (Action<Action<System.Object>, System.Object>)DisablePhysicsAutoSync
+                (Action<Action<System.Object>, System.Object>)RunWithoutAutosync
                 ),
         };
 
-        // Batching changes to large numbers of transforms.
-        private static void DisablePhysicsAutoSyncThenSync(Action<System.Object> orig, System.Object instance)
+        private static void SyncAfter(Action<System.Object, float> orig, System.Object instance, float deltaTime)
         {
-            RunWithoutAutosync(orig, instance);
+            RunWithoutAutosync(orig, instance, deltaTime);
             Physics.SyncTransforms();
         }
 
-        // This is faster for processes that only do read queries.
-        private static void DisablePhysicsAutoSync(Action<System.Object> orig, System.Object instance)
+        private static void BookendSyncs(Action<System.Object, float> orig, System.Object instance, float deltaTime)
         {
+            Physics.SyncTransforms();
+            RunWithoutAutosync(orig, instance, deltaTime);
+            Physics.SyncTransforms();
+        }
+
+        private static void BookendSyncs(Action<System.Object> orig, System.Object instance)
+        {
+            Physics.SyncTransforms();
             RunWithoutAutosync(orig, instance);
+            Physics.SyncTransforms();
         }
 
         private static void RunWithoutAutosync(Action<System.Object> orig, System.Object instance)
@@ -67,5 +94,19 @@ namespace TurboMode
                 Physics.autoSyncTransforms = true;
             }
         }
+
+        private static void RunWithoutAutosync(Action<System.Object, float> orig, System.Object instance, float deltaTime)
+        {
+            if (!TurboModePlugin.testModeEnabled)
+            {
+                Physics.autoSyncTransforms = false;
+            }
+            orig(instance, deltaTime);
+            if (!TurboModePlugin.testModeEnabled)
+            {
+                Physics.autoSyncTransforms = true;
+            }
+        }
+
     }
 }

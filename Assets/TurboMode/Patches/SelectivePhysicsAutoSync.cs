@@ -19,7 +19,7 @@ namespace TurboMode
             // RigidbodyBehavior drive a large number of transform changes during GameInstance.Update().
             new Hook(
                 typeof(RigidbodyBehavior).GetMethod("OnUpdate"),
-                (Action<Action<System.Object, float>, System.Object, float>)RunWithoutAutosync
+                (Action<Action<System.Object, float>, RigidbodyBehavior, float>)SeparatePartsFromOther
                 ),
 
             // write-only, VFX transforms I think.
@@ -61,6 +61,19 @@ namespace TurboMode
                 (Action<Action<System.Object>, System.Object>)RunWithoutAutosync
                 ),
         };
+
+        private static void SeparatePartsFromOther(Action<System.Object, float> orig, RigidbodyBehavior instance, float deltaTime)
+        {
+            RunWithoutAutosync(orig, instance, deltaTime);
+
+            // Syncing vessels here seems to fix an obscure issue
+            // with parts colliding into the ocean when well above sealevel.
+            // Parts have priority 4, everything else is priority 3.
+            if (instance.ExecutionPriorityOverride == 3 && instance.ViewObject.Vessel != null)
+            {
+                Physics.SyncTransforms();
+            }
+        }
 
         private static void SyncAfter(Action<System.Object, float> orig, System.Object instance, float deltaTime)
         {

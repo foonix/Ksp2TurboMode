@@ -78,16 +78,20 @@ namespace TurboMode.Editor
                 var burstedSrc = Path.Combine(buildFolder, $"{modName}_Data/Plugins/x86_64/lib_burst_generated.dll");
                 // If the file extension is .dll, SpaceWarp and BepInEx will log exceptions.
                 var burstedDest = Path.Combine(tmPluginDir, TurboModePlugin.burstCodeAssemblyName);
-                CopyOverwrite(burstedSrc, burstedDest);
 
-                var burstPdbDest = burstedDest.Replace(".dll", ".pdb");
-                if (debug)
+                if (File.Exists(burstedSrc))
                 {
-                    CopyOverwrite(burstedSrc.Replace(".dll", ".pdb"), burstPdbDest);
-                }
-                else
-                {
-                    File.Delete(burstPdbDest);
+                    CopyOverwrite(burstedSrc, burstedDest);
+
+                    var burstPdbDest = burstedDest.Replace(".dll", ".pdb");
+                    if (debug)
+                    {
+                        CopyOverwrite(burstedSrc.Replace(".dll", ".pdb"), burstPdbDest);
+                    }
+                    else
+                    {
+                        File.Delete(burstPdbDest);
+                    }
                 }
                 Debug.Log("TurboMode build complete");
             }

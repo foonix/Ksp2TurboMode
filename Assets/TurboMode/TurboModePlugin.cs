@@ -72,7 +72,7 @@ namespace TurboMode
             if (enableVesselSelfCollideConfig.Value)
                 hooks.AddRange(CollisionManagerPerformance.MakeHooks());
             if (enableSelectivePhysicsSync.Value)
-                hooks.AddRange(SelectivePhysicsAutoSync.MakeHooks());
+                hooks.AddRange(Patches.SelectivePhysicsAutoSync.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);

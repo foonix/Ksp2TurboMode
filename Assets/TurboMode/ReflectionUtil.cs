@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq.Expressions;
 using System.Reflection;
 
 namespace TurboMode
@@ -39,5 +40,47 @@ namespace TurboMode
             MethodInfo method = typeof(T).GetMethod(name, BindingFlags.NonPublic | BindingFlags.Instance);
             method.Invoke(obj, args);
         }
+
+        public static void InvokeOtherObjectEvent<T>(this System.Object instance, FieldInfo eventField, T args)
+        {
+            if (eventField.GetValue(instance) is not MulticastDelegate multicastDelegate)
+                return;
+
+            var invocationList = multicastDelegate.GetInvocationList();
+
+            foreach (var invocationMethod in invocationList)
+                invocationMethod.DynamicInvoke(args);
+        }
+
+#nullable enable
+        // This is the fastest way to invoke or enumerate events I've found.
+        // https://stackoverflow.com/a/71053418
+        public class EventHelper<TClass, TDelegate> where TDelegate : Delegate
+        {
+            public EventHelper(string eventName)
+            {
+                var fieldInfo = typeof(TClass).GetField(eventName, BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance) ??
+                        throw new ArgumentException("Event was not found", nameof(eventName));
+
+                var thisArg = Expression.Parameter(typeof(TClass));
+                var body = Expression.Convert(Expression.Field(thisArg, fieldInfo), typeof(TDelegate));
+                Get = Expression.Lambda<Func<TClass, TDelegate?>>(body, thisArg).Compile();
+            }
+
+            // Can be used to invoke the vent without garbage.
+            // thisHelper.Get(srcObj).Invoke(args)
+            public Func<TClass, TDelegate?> Get { get; }
+
+            public IEnumerable<TDelegate> GetInvocationList(TClass forInstance)
+            {
+                var eventDelegate = Get(forInstance);
+                if (eventDelegate is null)
+                    yield break;
+
+                foreach (var d in eventDelegate.GetInvocationList())
+                    yield return (TDelegate)d;
+            }
+        }
+#nullable disable
     }
 }

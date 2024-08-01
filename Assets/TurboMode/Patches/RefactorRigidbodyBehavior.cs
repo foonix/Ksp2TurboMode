@@ -167,49 +167,23 @@ namespace TurboMode.Patches
                 activeRigidBody.velocity = rbVelocity;
             }
 
-            // determine what data to report
-            Position position;
-            Rotation rotation;
-            Velocity velocity;
-            AngularVelocity angularVelocity;
-            position = physicsSpace.PhysicsToPosition(rbPosition);
-            rotation = physicsSpace.PhysicsToRotation(rbRotation);
-            if (rbb.IsPhysXActive)
-            {
-                velocity = physicsSpace.PhysicsToVelocity(rbVelocity);
-                angularVelocity = physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity);
-            }
-            else
-            {
-                if (activeRigidBody)
-                {
-                    velocity = physicsSpace.PhysicsToVelocity(rbVelocity);
-                    angularVelocity = physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity);
-                }
-                else
-                {
-                    velocity = default;
-                    angularVelocity = default;
-                }
-            }
-
-            // report
+            // report current data
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-            positionUpdatedHelper.Get(rbb)?.Invoke(position);
+            positionUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToPosition(rbPosition));
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-            rotationUpdatedHelper.Get(rbb)?.Invoke(rotation);
+            rotationUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToRotation(rbRotation));
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
-            if (activeRigidBody)
+            if (rbb.IsPhysXActive || activeRigidBody)
             {
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-                velocityUpdatedHelper.Get(rbb)?.Invoke(velocity);
+                velocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToVelocity(rbVelocity));
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-                angularVelocityUpdatedHelper.Get(rbb)?.Invoke(angularVelocity);
+                angularVelocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity));
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
             }
 

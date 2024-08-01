@@ -1,11 +1,9 @@
-using KSP.Sim.impl;
 using KSP.Sim;
-using System.Collections;
-using System.Collections.Generic;
-using System.Reflection;
-using UnityEngine;
+using KSP.Sim.impl;
 using System;
+using System.Reflection;
 using Unity.Profiling;
+using UnityEngine;
 
 namespace TurboMode.Patches
 {
@@ -41,15 +39,55 @@ namespace TurboMode.Patches
                 return;
             }
 
+            // Note that syncs to the physics engine may be pending when this is set.
+            // We're not guaranteed to have coherant Rigidbody.postion == Transform.position
+            // even if the transform was changed while this was `true`.
+            Physics.autoSyncTransforms = false;
+
             var _viewObject = rbb.ViewObject;
             var _physicsMode = rbb.PhysicsMode;
             var _ownerBehavior = (PartOwnerBehavior)_ownerBehaviorField.GetValue(rbb);
             var _isHandCorrectionCheckPending = (bool)_isHandCorrectionCheckPendingField.GetValue(rbb);
             var activeRigidBody = rbb.activeRigidBody;
-
-            Velocity velocity = default;
-            AngularVelocity angularVelocity = default;
             IPhysicsSpaceProvider physicsSpace = _viewObject.Universe.PhysicsSpace;
+
+            Vector3 rbPosition;
+            Quaternion rbRotation;
+            Vector3 rbVelocity;
+            Vector3 rbAngularVelocity;
+
+            bool setPos = false;
+            bool isVessel = _viewObject.PartOwner;
+            bool isPart = _viewObject.Part;
+            Transform controlledTransform = null;
+
+            // get current data
+            if (rbb.IsPhysXActive)
+            {
+                // Read the transform here because we won't see changes
+                // that would affect activeRigidBody.position that are still queued.
+                rbPosition = activeRigidBody.transform.position;
+                rbRotation = activeRigidBody.rotation;
+                rbVelocity = activeRigidBody.velocity;
+                rbAngularVelocity = activeRigidBody.angularVelocity;
+            }
+            else
+            {
+                controlledTransform = rbb.transform;
+                if (activeRigidBody)
+                {
+                    rbVelocity = activeRigidBody.velocity;
+                    rbAngularVelocity = activeRigidBody.angularVelocity;
+                }
+                else
+                {
+                    rbVelocity = default;
+                    rbAngularVelocity = default;
+                }
+                controlledTransform.GetPositionAndRotation(out rbPosition, out rbRotation);
+            }
+
+            // determine if we're manually moving or not, and calculate new positions if we are.
             if (_physicsMode == PartPhysicsModes.None)
             {
                 _isHandCorrectionCheckPending = false;
@@ -57,16 +95,17 @@ namespace TurboMode.Patches
             }
             else if (_isHandCorrectionCheckPending)
             {
-                if (_viewObject.Part != null)
+                if (isPart)
                 {
                     _ownerBehavior = _viewObject.Part.partOwner;
                     _ownerBehaviorField.SetValue(rbb, _ownerBehavior);
                 }
-                else if (_viewObject.PartOwner != null)
+                else if (isVessel)
                 {
                     _ownerBehavior = _viewObject.PartOwner;
                     _ownerBehaviorField.SetValue(rbb, _ownerBehavior);
                 }
+
                 if (_ownerBehavior != null && _ownerBehavior.IsHandOfKrakenCorrectingOrbit)
                 {
                     bool physxStarting = _ownerBehavior.IsOwnerPhysXStarted && !_ownerBehavior.IsChildPhysXStarted;
@@ -74,76 +113,114 @@ namespace TurboMode.Patches
                         - (physicsSpace.PositionToPhysics(_ownerBehavior.Model.CenterOfMass)
                         - physicsSpace.PositionToPhysics(rbb.Model.Position));
                     Vector3d targetVelocity = physicsSpace.VelocityToPhysics(_ownerBehavior.HandOfKrakenExpectedVel, _ownerBehavior.HandOfKrakenExpectedPos);
-                    Vector3 currentVelocityRelative = activeRigidBody.velocity - _ownerBehavior.HandOfKrakenStartOfUpdateVel;
+                    Vector3 currentVelocityRelative = rbVelocity - _ownerBehavior.HandOfKrakenStartOfUpdateVel;
                     targetVelocity += currentVelocityRelative;
                     if (physxStarting)
                     {
-                        if (_viewObject.PartOwner != null)
+                        // init if vessel?
+                        if (isVessel)
                         {
-                            activeRigidBody.transform.position = targetPos;
-                            activeRigidBody.velocity = targetVelocity;
+                            controlledTransform = activeRigidBody.transform;
+                            rbPosition = targetPos;
+                            rbVelocity = targetVelocity;
+                            setPos = true;
                         }
+                        // ignore parts and everything else?
                     }
-                    else if (_viewObject.PartOwner != null)
+                    else if (isVessel)
                     {
+                        // set vessel position to root part position?
                         _ownerBehavior = _viewObject.PartOwner;
                         _ownerBehavior.Model.TryGetPart(_ownerBehavior.Model.RootPart.GlobalId, out var part);
-                        PartBehavior partViewComponent = _ownerBehavior.GetPartViewComponent(part);
-                        if (partViewComponent != null)
+                        PartBehavior partBehavior = _ownerBehavior.GetPartViewComponent(part);
+                        if (partBehavior != null)
                         {
-                            partViewComponent.transform.position = targetPos;
-                            activeRigidBody.velocity = targetVelocity;
+                            controlledTransform = partBehavior.transform;
+                            rbPosition = targetPos;
+                            rbVelocity = targetVelocity;
+                            setPos = true;
                         }
                     }
+                    // if not the vessel?
                     else if (activeRigidBody != _ownerBehavior.ViewObject.Rigidbody.activeRigidBody)
                     {
-                        rbb.transform.position = targetPos;
-                        activeRigidBody.velocity = targetVelocity;
+                        controlledTransform = rbb.transform;
+                        rbPosition = targetPos;
+                        rbVelocity = targetVelocity;
+                        setPos = true;
                     }
                 }
                 _isHandCorrectionCheckPending = false;
                 _isHandCorrectionCheckPendingField.SetValue(rbb, _isHandCorrectionCheckPending);
             }
+
+            // actually move
+            if (setPos)
+            {
+                // Unity may not even queue these changes, so they may not be visible downstream
+                // even after turn autoSync back on.  Collider positions will still be dirty,
+                // but we definitely need accurate Rigidbody positions downstream.
+                // So write to both seems to be enough to avoid needing a full sync, at least until
+                // the universe OnUpdate() loop which does check colliders.
+                controlledTransform.position = rbPosition;
+                activeRigidBody.position = rbPosition;
+                activeRigidBody.velocity = rbVelocity;
+            }
+
+            // determine what data to report
             Position position;
             Rotation rotation;
+            Velocity velocity;
+            AngularVelocity angularVelocity;
+            position = physicsSpace.PhysicsToPosition(rbPosition);
+            rotation = physicsSpace.PhysicsToRotation(rbRotation);
             if (rbb.IsPhysXActive)
             {
-                position = physicsSpace.PhysicsToPosition(activeRigidBody.position);
-                rotation = physicsSpace.PhysicsToRotation(activeRigidBody.rotation);
-                velocity = physicsSpace.PhysicsToVelocity(activeRigidBody.velocity);
-                angularVelocity = physicsSpace.PhysicsToAngularVelocity(activeRigidBody.angularVelocity);
+                velocity = physicsSpace.PhysicsToVelocity(rbVelocity);
+                angularVelocity = physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity);
             }
             else
             {
-                position = physicsSpace.PhysicsToPosition(rbb.transform.position);
-                rotation = physicsSpace.PhysicsToRotation(rbb.transform.rotation);
-                if (activeRigidBody != null)
+                if (activeRigidBody)
                 {
-                    velocity = physicsSpace.PhysicsToVelocity(activeRigidBody.velocity);
-                    angularVelocity = physicsSpace.PhysicsToAngularVelocity(activeRigidBody.angularVelocity);
+                    velocity = physicsSpace.PhysicsToVelocity(rbVelocity);
+                    angularVelocity = physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity);
+                }
+                else
+                {
+                    velocity = default;
+                    angularVelocity = default;
                 }
             }
 
+            // report
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-            positionUpdatedHelper.Get(rbb).Invoke(position);
+            positionUpdatedHelper.Get(rbb)?.Invoke(position);
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-            rotationUpdatedHelper.Get(rbb).Invoke(rotation);
+            rotationUpdatedHelper.Get(rbb)?.Invoke(rotation);
             SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
-            if (activeRigidBody != null)
+            if (activeRigidBody)
             {
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-                velocityUpdatedHelper.Get(rbb).Invoke(velocity);
+                velocityUpdatedHelper.Get(rbb)?.Invoke(velocity);
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-                angularVelocityUpdatedHelper.Get(rbb).Invoke(angularVelocity);
+                angularVelocityUpdatedHelper.Get(rbb)?.Invoke(angularVelocity);
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
             }
-            if (_viewObject.PartOwner != null)
+
+            Physics.autoSyncTransforms = true;
+
+            // Calculate vessel CoM
+            // No idea why a PartOwner update is in here.  This only applies to the vessel,
+            // but the parts haven't been moved yet.
+            if (isVessel)
             {
+                SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
                 OrbiterComponent orbiter = rbb.SimObjectComponent.SimulationObject.Orbiter;
                 if (_viewObject.PartOwner.IsHandOfKrakenCorrectingOrbit)
                 {
@@ -156,6 +233,7 @@ namespace TurboMode.Patches
                 Velocity newVelocity = physicsSpace.PhysicsToVelocity(averageVelocity);
                 orbiter.UpdateFromStateVectors(newPosition, newVelocity);
                 _viewObject.PartOwner.Model.CenterOfMass = newPosition;
+                SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
             }
         }
     }

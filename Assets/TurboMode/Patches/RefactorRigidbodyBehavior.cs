@@ -12,10 +12,6 @@ namespace TurboMode.Patches
         private static readonly ProfilerMarker SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents = new("SelectivePhysicsAutoSync.RigidbodyBehaviorOnUpdateEvents");
 
         // private fields
-        //private static readonly FieldInfo _ownerBehaviorField
-        //    = typeof(RigidbodyBehavior).GetField("_ownerBehavior", BindingFlags.NonPublic | BindingFlags.Instance);
-        //private static readonly FieldInfo _isHandCorrectionCheckPendingField
-        //    = typeof(RigidbodyBehavior).GetField("_isHandCorrectionCheckPending", BindingFlags.NonPublic | BindingFlags.Instance);
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, PartOwnerBehavior> _ownerBehaviorField
             = new(typeof(RigidbodyBehavior).GetField("_ownerBehavior", BindingFlags.NonPublic | BindingFlags.Instance));
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, bool> _isHandCorrectionCheckPendingField
@@ -50,9 +46,7 @@ namespace TurboMode.Patches
 
             var _viewObject = rbb.ViewObject;
             var _physicsMode = rbb.PhysicsMode;
-            //var _ownerBehavior = (PartOwnerBehavior)_ownerBehaviorField.GetValue(rbb);
             var _ownerBehavior = _ownerBehaviorField.Get(rbb);
-            //var _isHandCorrectionCheckPending = (bool)_isHandCorrectionCheckPendingField.GetValue(rbb);
             var _isHandCorrectionCheckPending = _isHandCorrectionCheckPendingField.Get(rbb);
             var activeRigidBody = rbb.activeRigidBody;
             IPhysicsSpaceProvider physicsSpace = _viewObject.Universe.PhysicsSpace;
@@ -97,7 +91,6 @@ namespace TurboMode.Patches
             if (_physicsMode == PartPhysicsModes.None)
             {
                 _isHandCorrectionCheckPending = false;
-                //_isHandCorrectionCheckPendingField.SetValue(rbb, _isHandCorrectionCheckPending);
                 _isHandCorrectionCheckPendingField.Set(rbb, _isHandCorrectionCheckPending);
             }
             else if (_isHandCorrectionCheckPending)
@@ -105,13 +98,11 @@ namespace TurboMode.Patches
                 if (isPart)
                 {
                     _ownerBehavior = _viewObject.Part.partOwner;
-                    //_ownerBehaviorField.SetValue(rbb, _ownerBehavior);
                     _ownerBehaviorField.Set(rbb, _ownerBehavior);
                 }
                 else if (isVessel)
                 {
                     _ownerBehavior = _viewObject.PartOwner;
-                    //_ownerBehaviorField.SetValue(rbb, _ownerBehavior);
                     _ownerBehaviorField.Set(rbb, _ownerBehavior);
                 }
 
@@ -160,7 +151,6 @@ namespace TurboMode.Patches
                     }
                 }
                 _isHandCorrectionCheckPending = false;
-                //_isHandCorrectionCheckPendingField.SetValue(rbb, _isHandCorrectionCheckPending);
                 _isHandCorrectionCheckPendingField.Set(rbb, _isHandCorrectionCheckPending);
             }
 

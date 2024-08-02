@@ -1,15 +1,22 @@
-using Codice.Client.Common.GameUI;
 using System.IO;
-using System.Reflection;
 using ThunderKit.Core.Data;
 using UnityEditor;
 using UnityEngine;
 
 namespace TurboMode.Editor
 {
-
     public class BuildTurboMode : MonoBehaviour
     {
+        [MenuItem("Tools/TurboMode/Build (debug) and run")]
+        public static void BuildDebugAndRun()
+        {
+            if (Build(true))
+            {
+                var tkSettings = ThunderKitSettings.GetOrCreateSettings<ThunderKitSettings>();
+                System.Diagnostics.Process.Start(Path.Combine(tkSettings.GamePath, tkSettings.GameExecutable));
+            }
+        }
+
         [MenuItem("Tools/TurboMode/Build (debug)")]
         public static void BuildDebug()
         {
@@ -22,7 +29,7 @@ namespace TurboMode.Editor
             Build(false);
         }
 
-        private static void Build(bool debug)
+        private static bool Build(bool debug)
         {
             var tkSettings = ThunderKitSettings.GetOrCreateSettings<ThunderKitSettings>();
 
@@ -94,10 +101,12 @@ namespace TurboMode.Editor
                     }
                 }
                 Debug.Log("TurboMode build complete");
+                return true;
             }
             else
             {
                 Debug.LogError("TurboMode build failed");
+                return false;
             }
         }
 

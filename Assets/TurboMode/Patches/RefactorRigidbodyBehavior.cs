@@ -200,6 +200,7 @@ namespace TurboMode.Patches
                 {
                     orbiter.PatchedOrbit.UpdateFromUT(rbb.Game.UniverseModel.UniverseTime);
                     _viewObject.PartOwner.Model.CenterOfMass = orbiter.Position;
+                    SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
                     return;
                 }
                 _viewObject.PartOwner.GetMassAverages(out var averageCenterOfMass, out var averageVelocity);

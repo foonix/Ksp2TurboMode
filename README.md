@@ -8,10 +8,10 @@ Features:
 - Reduce per-part overhead on active vessel by avoiding PhysX synchronization overhead when the game moves parts around manually.
 - Reduce UI overhead by shutting off incative UI windows. (This can cause slight stutters when opening a window.)
 
-## Installation
+## Manual Installation
 
 - BepInEx must be installed into your KSP2 game files.  I recommend using CKAN to install it.
-- Download the latest zip from the "releases" tab
+- Download the TurboMode-x.y.z.zip from the [release page](https://github.com/foonix/Ksp2TurboMode/releases).
 - Unzip to `BepInEx/plugins/TurboMode`
 
 ## Troubleshooting

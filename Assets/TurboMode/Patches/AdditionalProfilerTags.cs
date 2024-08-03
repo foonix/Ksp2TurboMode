@@ -6,12 +6,15 @@ using System;
 using System.Collections.Generic;
 using System.Reflection;
 using Unity.Profiling;
+using UnityEngine.EventSystems;
+using UnityEngine.UI;
 
 namespace TurboMode
 {
     public class AdditionalProfilerTags
     {
         private readonly ProfilerMarker marker;
+        private static readonly ProfilerMarker graphicRaycasterMarker = new("GraphicRaycaster.Raycast()");
 
         private delegate void fixedUpdateSig(Action<UnityEngine.Object, float> orig, UnityEngine.Object contextObj, float deltaTime);
         private delegate void fixedUpdateSigNoContext(Action<System.Object, float> orig, System.Object contextObj, float deltaTime);
@@ -70,6 +73,12 @@ namespace TurboMode
                     .MakeWrapVoid(typeof(PartOwnerComponent).GetMethod("CalculatePhysicsStats")),
                 new AdditionalProfilerTags(new("ResourceFlowRequestManager.UpdateFlowRequests"))
                     .MakeSpaceSimulationFixedUpdate(typeof(ResourceFlowRequestManager).GetMethod("UpdateFlowRequests")),
+
+                // Trying to figure out why EventSystem takes an entire ms
+                new Hook(
+                    typeof(GraphicRaycaster).GetMethod("Raycast"),
+                    (Action<Action<GraphicRaycaster, PointerEventData, List<RaycastResult>>, GraphicRaycaster, PointerEventData, List<RaycastResult>>)WrapGraphicRaycaster
+                ),
             };
 
         private void WrapFixedUpdate(Action<UnityEngine.Object, float> orig, UnityEngine.Object contextObj, float deltaTime)
@@ -102,6 +111,17 @@ namespace TurboMode
             marker.Begin();
             orig(contextObj, universalTime, deltaUniversalTime);
             marker.End();
+        }
+
+        private static void WrapGraphicRaycaster(
+            Action<GraphicRaycaster, PointerEventData, List<RaycastResult>> orig,
+            GraphicRaycaster gr,
+            PointerEventData pointerEventData,
+            List<RaycastResult> raycastResults)
+        {
+            graphicRaycasterMarker.Begin(gr);
+            orig(gr, pointerEventData, raycastResults);
+            graphicRaycasterMarker.End();
         }
 
         private Hook MakeHook(MethodInfo source) => new(source, (fixedUpdateSig)WrapFixedUpdate);

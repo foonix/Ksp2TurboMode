@@ -74,6 +74,7 @@ namespace TurboMode
             if (enableSelectivePhysicsSync.Value)
                 hooks.AddRange(Patches.SelectivePhysicsAutoSync.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
+            hooks.AddRange(Patches.ShutoffUnusedWindowHierarchies.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));

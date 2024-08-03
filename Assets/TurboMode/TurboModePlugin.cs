@@ -28,6 +28,7 @@ namespace TurboMode
         public ConfigEntry<bool> enableVesselSelfCollideConfig;
         public ConfigEntry<bool> enableSelectivePhysicsSync;
         public ConfigEntry<bool> enableEcsSimConfig;
+        public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
 
         private void Awake()
         {
@@ -51,6 +52,12 @@ namespace TurboMode
                 true,
                 "Disables Unity's Physics.autoSyncTransforms feature for certain operations unlikely to need it."
             );
+            shutoffUnusedWindowHierarchies = Config.Bind(
+                "General",
+                "ShutoffUnusedWindowHierarchies",
+                true,
+                "Completely deactivate non-visible UI windows. May cause slight startup jitter when opening them."
+            );
             enableEcsSimConfig = Config.Bind(
                 "General",
                 "EnableEcsSimulation",
@@ -73,8 +80,9 @@ namespace TurboMode
                 hooks.AddRange(CollisionManagerPerformance.MakeHooks());
             if (enableSelectivePhysicsSync.Value)
                 hooks.AddRange(Patches.SelectivePhysicsAutoSync.MakeHooks());
+            if (shutoffUnusedWindowHierarchies.Value)
+                hooks.AddRange(Patches.ShutoffUnusedWindowHierarchies.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
-            hooks.AddRange(Patches.ShutoffUnusedWindowHierarchies.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));

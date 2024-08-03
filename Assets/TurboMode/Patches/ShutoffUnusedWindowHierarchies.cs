@@ -33,7 +33,6 @@ namespace TurboMode.Patches
             ),
 
             // KSPUtil.SetVisible() extension is used by several windows
-            // SettingsMenuManager
             new Hook(
                 typeof(KSPUtil).GetMethod("SetVisible"),
                 (Action<Action<CanvasGroup, bool>, CanvasGroup, bool>)SetActiveOnVisibilityKSPUtil
@@ -49,7 +48,9 @@ namespace TurboMode.Patches
 
         public static void SetPopUpUIVisibility(Action<PopUpUIManagerBase, bool> orig, PopUpUIManagerBase window, bool isVisible)
         {
+#if TURBOMODE_TRACE_EVENTS
             Debug.Log($"TM: Setting window {window.gameObject.name} active {isVisible}");
+#endif
             if (isVisible)
             {
                 window.gameObject.SetActive(true);
@@ -65,7 +66,9 @@ namespace TurboMode.Patches
         // CheatsMenu
         public static void SetActiveOnVisibilityChangeCheats(Action<CheatsMenu, bool> orig, CheatsMenu window, bool isVisible)
         {
+#if TURBOMODE_TRACE_EVENTS
             Debug.Log($"TM: Cheats window {window.gameObject.name} active {isVisible}");
+#endif
             if (isVisible)
             {
                 window.gameObject.SetActive(true);
@@ -82,7 +85,9 @@ namespace TurboMode.Patches
             CanvasGroup window,
             bool isVisible)
         {
+#if TURBOMODE_TRACE_EVENTS
             Debug.Log($"TM: Setting window {window.gameObject.name} active {isVisible}");
+#endif
 
             // blacklisting LaunchpadDialog's children because it will call SetVisible(true)
             // on inactive children while it itself isn't visible,
@@ -107,7 +112,9 @@ namespace TurboMode.Patches
             // It will try to turn off the escape menu before the prefab is instantiated.
             if (!uiManager.EscapeMenu) return;
 
+#if TURBOMODE_TRACE_EVENTS
             Debug.Log($"TM: Menu {uiManager.EscapeMenu.name} active {isVisible}");
+#endif
             if (isVisible)
             {
                 uiManager.EscapeMenu.gameObject.SetActive(isVisible);
@@ -115,18 +122,18 @@ namespace TurboMode.Patches
             orig(uiManager, isVisible);
             if (!isVisible && uiManager.EscapeMenu.isActiveAndEnabled)
             {
-                uiManager.EscapeMenu.StartCoroutine(DelayEscapeMenuShutdown());
+                uiManager.EscapeMenu.StartCoroutine(WaitForUiInit(uiManager, uiManager.EscapeMenu.gameObject, isVisible));
             }
         }
 
-        private static IEnumerator DelayEscapeMenuShutdown()
+        private static IEnumerator WaitForUiInit(UIManager ui, GameObject target, bool setActive)
         {
             // wait for children to finish initilizing, or else it will throw errors first time we turn it on.
-            while (!GameManager.Instance.Game.UI.Initialized)
+            while (!ui.Initialized)
             {
                 yield return null;
             }
-            GameManager.Instance.Game.UI.EscapeMenu.gameObject.SetActive(false);
+            target.SetActive(setActive);
         }
     }
 }

@@ -58,7 +58,8 @@ namespace TurboMode.Behaviors
                 });
 
                 // init KRP
-                GraphicsSettings.defaultRenderPipeline = ScriptableObject.CreateInstance<KrpPipelineAsset>();
+                if (TurboModePlugin.kerbalRenderPipeline)
+                    GraphicsSettings.defaultRenderPipeline = ScriptableObject.CreateInstance<KrpPipelineAsset>();
 
                 messageCenter = gameInstance.Messages;
                 initialized = true;

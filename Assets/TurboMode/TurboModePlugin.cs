@@ -23,12 +23,14 @@ namespace TurboMode
         internal static bool testModeEnabled = false;
         public static bool enableVesselSelfCollide = true;
         public static bool enableEcsSim = false;
+        public static bool kerbalRenderPipeline = false;
 
         public ConfigEntry<bool> testModeConfig;
         public ConfigEntry<bool> enableVesselSelfCollideConfig;
         public ConfigEntry<bool> enableSelectivePhysicsSync;
         public ConfigEntry<bool> enableEcsSimConfig;
         public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
+        public ConfigEntry<bool> kerbalRenderPipelineConfig;
 
         private void Awake()
         {
@@ -58,6 +60,12 @@ namespace TurboMode
                 true,
                 "Completely deactivate non-visible UI windows. May cause slight startup jitter when opening them."
             );
+            kerbalRenderPipelineConfig = Config.Bind(
+                "General",
+                "KerbalRenderPipeline",
+                false,
+                "SRP based render pipeline.  DOES NOT WORK YET."
+            );
             enableEcsSimConfig = Config.Bind(
                 "General",
                 "EnableEcsSimulation",
@@ -68,6 +76,7 @@ namespace TurboMode
             testModeEnabled = testModeConfig.Value;
             enableVesselSelfCollide = enableVesselSelfCollideConfig.Value;
             enableEcsSim = enableEcsSimConfig.Value;
+            kerbalRenderPipeline = kerbalRenderPipelineConfig.Value;
 
             SceneManager.sceneLoaded += (scene, mode) =>
             {
@@ -86,7 +95,8 @@ namespace TurboMode
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));
-            Assembly.LoadFile(Path.Combine(cwd, "Unity.RenderPipelines.Core.Runtime.dll"));
+            if (kerbalRenderPipeline)
+                Assembly.LoadFile(Path.Combine(cwd, "Unity.RenderPipelines.Core.Runtime.dll"));
 
             var burstLibFullpath = Path.GetFullPath(Path.Combine(cwd, burstCodeAssemblyName));
             if (!File.Exists(burstLibFullpath))

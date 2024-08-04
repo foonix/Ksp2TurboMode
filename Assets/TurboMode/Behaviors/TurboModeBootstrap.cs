@@ -2,8 +2,10 @@ using KSP.Game;
 using KSP.Logging;
 using KSP.Messages;
 using KSP.Sim.impl;
+using TurboMode.Rendering;
 using TurboMode.Sim;
 using UnityEngine;
+using UnityEngine.Rendering;
 
 namespace TurboMode.Behaviors
 {
@@ -54,6 +56,9 @@ namespace TurboMode.Behaviors
                         new UniverseSim(GameManager.Instance.Game);
                     }
                 });
+
+                // init KRP
+                GraphicsSettings.defaultRenderPipeline = ScriptableObject.CreateInstance<KrpPipelineAsset>();
 
                 messageCenter = gameInstance.Messages;
                 initialized = true;

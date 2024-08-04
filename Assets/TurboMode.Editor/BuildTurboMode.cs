@@ -43,6 +43,7 @@ namespace TurboMode.Editor
                 "Unity.Entities",
                 "Unity.Mathematics.Extensions",
                 "Unity.Profiling.Core",
+                "Unity.RenderPipelines.Core.Runtime",
                 "Unity.Serialization",
             };
 

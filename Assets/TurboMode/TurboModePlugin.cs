@@ -86,6 +86,7 @@ namespace TurboMode
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));
+            Assembly.LoadFile(Path.Combine(cwd, "Unity.RenderPipelines.Core.Runtime.dll"));
 
             var burstLibFullpath = Path.GetFullPath(Path.Combine(cwd, burstCodeAssemblyName));
             if (!File.Exists(burstLibFullpath))

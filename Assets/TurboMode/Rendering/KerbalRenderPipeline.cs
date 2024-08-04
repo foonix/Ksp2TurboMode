@@ -34,6 +34,7 @@ namespace TurboMode.Rendering
 
         CommandBuffer commandBuffer = new CommandBuffer();
         int frameIndex = 0;
+        bool intitialized;
 
         public KrpRenderPipeline(KrpPipelineAsset asset)
         {
@@ -61,24 +62,33 @@ namespace TurboMode.Rendering
             m_RenderGraph = new RenderGraph("KRP Render Graph");
             commandBuffer.name = "KRP reusable";
 
-            fullScreenTriangle = new Mesh
-            {
-                name = "My Post-Processing Stack Full-Screen Triangle",
-                vertices = new Vector3[] {
-                new Vector3(-1f, -1f, 0f),
-                new Vector3(-1f,  3f, 0f),
-                new Vector3( 3f, -1f, 0f)
-            },
-                triangles = new int[] { 0, 1, 2 },
-            };
-            fullScreenTriangle.UploadMeshData(true);
+            InitResources();
             RTHandles.Initialize(Screen.width, Screen.height);
+        }
+
+        private void InitResources()
+        {
+            if(!fullScreenTriangle)
+            {
+                fullScreenTriangle = new Mesh
+                {
+                    name = "My Post-Processing Stack Full-Screen Triangle",
+                    vertices = new Vector3[] {
+                        new Vector3(-1f, -1f, 0f),
+                        new Vector3(-1f,  3f, 0f),
+                        new Vector3( 3f, -1f, 0f)
+                    },
+                    triangles = new int[] { 0, 1, 2 },
+                };
+                fullScreenTriangle.UploadMeshData(true);
+            }
         }
 
         protected override void Dispose(bool disposing)
         {
             m_RenderGraph.Cleanup();
             m_RenderGraph = null;
+            fullScreenTriangle = null;
         }
 
         struct GBuffers
@@ -156,7 +166,8 @@ namespace TurboMode.Rendering
             var mainDisplay = Display.main;
             RTHandles.SetReferenceSize(mainDisplay.renderingWidth, mainDisplay.renderingHeight);
 
-            if (sharedHdrDisplay0Target is null || sharedHdrDisplay0Target.width != mainDisplay.renderingWidth || sharedHdrDisplay0Target.height != mainDisplay.renderingHeight)
+            InitResources();
+            if (!sharedHdrDisplay0Target || sharedHdrDisplay0Target.width != mainDisplay.renderingWidth || sharedHdrDisplay0Target.height != mainDisplay.renderingHeight)
             {
                 var hdrDisplayDesc = new RenderTextureDescriptor(mainDisplay.renderingWidth, mainDisplay.renderingHeight, RenderTextureFormat.DefaultHDR);
                 sharedHdrDisplay0Target = new RenderTexture(hdrDisplayDesc);
@@ -246,18 +257,18 @@ namespace TurboMode.Rendering
             //    CreateDefferedDefaultReflectionsPass(m_RenderGraph, gBufferPass, cameraTarget, beforeReflectionCmd, aftereReflectionCmd);
             //}
 
-            if (camera.clearFlags != CameraClearFlags.Nothing)
-            {
-                var skybox = CreateSkybox(camera, m_RenderGraph, result, gBufferPass.gbuffers.depth);
-                result = skybox.target;
-            }
-
             // need an actual shadow map
             //CollectScreenSpaceShadowsPass(renderGraph, gbuffers.depth, gbuffers.depth, camera);
             //var resolvedDepth = ResolveDepth(m_RenderGraph, gbuffers.depth, passAggregate, false);
 
             var lightPass = CreateDeferredOpaqueLightingPass(m_RenderGraph, cullingResults, gBufferPass, result, camera);
             result = lightPass.result;
+
+            if (camera.clearFlags != CameraClearFlags.Nothing)
+            {
+                var skybox = CreateSkybox(camera, m_RenderGraph, result, gBufferPass.gbuffers.depth);
+                result = skybox.target;
+            }
 
             // transparent "SRPDefaultUnlit"
             //var forwardTransparent = CreateForwardTransparentPass(m_RenderGraph, cullingResults, camera, result, gBufferPass.gbuffers.depth);
@@ -277,7 +288,7 @@ namespace TurboMode.Rendering
             // TODO: check formats match KSP2
             TextureHandle diffuse = CreateColorTexture(graph, camera, "GBUFFER diffuse", Color.black, RenderTextureFormat.ARGB32, true);
             TextureHandle specular = CreateColorTexture(graph, camera, "GBUFFER specular", Color.black, RenderTextureFormat.ARGB32, true);
-            TextureHandle normals = CreateColorTexture(graph, camera, "GBUFFER normals", Color.black, RenderTextureFormat.ARGB2101010, true);
+            TextureHandle normals = CreateColorTexture(graph, camera, "GBUFFER normals", Color.black, RenderTextureFormat.ARGB2101010, false);
             TextureHandle depth = CreateDepthTexture(graph, camera, "GBUFFER depth");
 
             using (var builder = graph.AddRenderPass<DeferredOpaqueGBufferData>("KRP Opaque GBUFFER pass " + camera.name, out var passData))

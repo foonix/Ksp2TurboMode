@@ -12,10 +12,11 @@ namespace TurboMode.Rendering
         RenderGraph m_RenderGraph;
         private RenderTexture sharedHdrDisplay0Target;
 
+        static readonly ProfilerMarker s_KrpRecordGraph = new("KrpRenderPipeline record RenderGraph");
         static readonly ProfilerMarker s_KrpOpaqueMarker = new("KrpRenderPipeline opaque GBUFFER");
         static readonly ProfilerMarker s_KrpTransparentMarker = new("KrpRenderPipeline transparent");
         static readonly ProfilerMarker s_KrpSubmitMarker = new("KrpRenderPipeline context submit");
-
+        static readonly ProfilerMarker s_KrpExternalCallbacks = new("KrpRenderPipeline (external callbacks)");
 
         static Material deferredLighting;
         static Material deferredScreenSpaceShadows;
@@ -87,6 +88,11 @@ namespace TurboMode.Rendering
             public Camera camera;
             // null until the graph's begin for the camera is run.
             public CullingResults cullingResults;
+        }
+
+        class KrpCameraEnd
+        {
+            public Camera camera;
         }
 
         struct GBuffers
@@ -184,6 +190,7 @@ namespace TurboMode.Rendering
             CommandBuffer cmdRG = CommandBufferPool.Get("KRP main");
             RenderGraphParameters rgParams = new()
             {
+                executionName = "KRP Render Cameras",
                 commandBuffer = cmdRG,
                 scriptableRenderContext = context,
                 currentFrameIndex = Time.frameCount
@@ -192,6 +199,7 @@ namespace TurboMode.Rendering
 
             using (m_RenderGraph.RecordAndExecute(rgParams))
             {
+                s_KrpRecordGraph.Begin();
                 var sharedHdrDisplay0TargetHandle = m_RenderGraph.ImportBackbuffer(sharedHdrDisplay0Target);
 
                 // Iterate over all Cameras
@@ -221,9 +229,7 @@ namespace TurboMode.Rendering
                         CreateBlit(m_RenderGraph, cameraOut, ref rttHandle);
                     }
                 }
-
-                //m_RenderGraph.Execute();
-
+                s_KrpRecordGraph.End();
             }
             context.ExecuteCommandBuffer(cmdRG);
             CommandBufferPool.Release(cmdRG);
@@ -279,11 +285,7 @@ namespace TurboMode.Rendering
             var forwardTransparent = CreateForwardTransparentPass(m_RenderGraph, cameraData, result, gBufferPass.gbuffers.depth);
             result = forwardTransparent.output;
 
-            EndCameraRendering(context, camera);
-            //Camera.SetupCurrent(camera);
-            //context.InvokeOnRenderObjectCallback();
-
-            //renderGraph.EndProfilingSampler(cameraSampler);
+            CameraEnd(graph, cameraData);
 
             return result;
         }
@@ -604,13 +606,22 @@ namespace TurboMode.Rendering
 
             builder.SetRenderFunc((KrpCameraData data, RenderGraphContext context) =>
             {
+                s_KrpExternalCallbacks.Begin(data.camera);
                 BeginCameraRendering(context.renderContext, data.camera);
+                s_KrpExternalCallbacks.End();
 
                 // todo: Camera.onPreCull
+                s_KrpExternalCallbacks.Begin(camera);
+                Camera.onPreCull?.Invoke(camera);
+                s_KrpExternalCallbacks.End();
+
                 data.camera.TryGetCullingParameters(out var cullingParameters);
                 data.cullingResults = context.renderContext.Cull(ref cullingParameters);
 
                 // todo: Camera.onPreRender
+                s_KrpExternalCallbacks.Begin(camera);
+                Camera.onPreRender?.Invoke(camera);
+                s_KrpExternalCallbacks.End();
 
                 // todo: run legacy camera command buffers?
             });
@@ -618,5 +629,29 @@ namespace TurboMode.Rendering
             return passData;
         }
 
+        private KrpCameraEnd CameraEnd(RenderGraph graph, KrpCameraData cameraData)
+        {
+            using var builder = graph.AddRenderPass<KrpCameraEnd>("KRP end camera", out var passData);
+
+            builder.AllowPassCulling(false);
+
+            passData.camera = cameraData.camera;
+
+            builder.SetRenderFunc((KrpCameraEnd data, RenderGraphContext context) =>
+            {
+                s_KrpExternalCallbacks.Begin(data.camera);
+                EndCameraRendering(context.renderContext, data.camera);
+                s_KrpExternalCallbacks.End();
+
+                context.renderContext.ExecuteCommandBuffer(context.cmd);
+                context.cmd.Clear();
+
+                s_KrpExternalCallbacks.Begin();
+                Camera.onPostRender?.Invoke(data.camera);
+                s_KrpExternalCallbacks.End();
+            });
+
+            return passData;
+        }
     }
 }

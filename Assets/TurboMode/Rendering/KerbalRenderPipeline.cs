@@ -9,15 +9,13 @@ namespace TurboMode.Rendering
 {
     public class KrpRenderPipeline : RenderPipeline
     {
-        private readonly KrpPipelineAsset renderPipelineAsset;
-
         RenderGraph m_RenderGraph;
         private RenderTexture sharedHdrDisplay0Target;
 
-        static readonly ProfilerMarker s_KrpOpaqueMarker = new ProfilerMarker("KrpRenderPipeline opaque");
-        static readonly ProfilerMarker s_KrpTransparentMarker = new ProfilerMarker("KrpRenderPipeline transparent");
-        static readonly ProfilerMarker s_KrpSubmitMarker = new ProfilerMarker("KrpRenderPipeline context submit");
-        static readonly ProfilingSampler cameraSampler = new ProfilingSampler("KRP camera");
+        static readonly ProfilerMarker s_KrpOpaqueMarker = new("KrpRenderPipeline opaque GBUFFER");
+        static readonly ProfilerMarker s_KrpTransparentMarker = new("KrpRenderPipeline transparent");
+        static readonly ProfilerMarker s_KrpSubmitMarker = new("KrpRenderPipeline context submit");
+
 
         static Material deferredLighting;
         static Material deferredScreenSpaceShadows;
@@ -25,30 +23,19 @@ namespace TurboMode.Rendering
         static Mesh fullScreenTriangle;
 
         // https://docs.unity3d.com/Manual/shader-predefined-pass-tags-built-in.html
-        private static readonly ShaderTagId deferredPassTag = new ShaderTagId("DEFERRED");
-        private static readonly ShaderTagId transparentPassTag = new ShaderTagId("SRPDefaultUnlit");
-        private static readonly ShaderTagId[] forwardOpaqueTags = {
-            new ShaderTagId("FORWARDBASE"),
-        };
+        private static readonly ShaderTagId deferredPassTag = new("DEFERRED");
         private static readonly ShaderTagId[] transparentPassTags = {
-            new ShaderTagId("FORWARDBASE"), // "KSP2/Scenery/Standard (Transparent)"
-            new ShaderTagId("ForwardAdd"),
-            new ShaderTagId("SRPDefaultUnlit"),
+            new ("FORWARDBASE"), // "KSP2/Scenery/Standard (Transparent)"
+            new ("ForwardAdd"),
+            new ("SRPDefaultUnlit"),
         };
 
-
-        CommandBuffer commandBuffer = new CommandBuffer();
-        int frameIndex = 0;
-        bool intitialized;
-
-        public KrpRenderPipeline(KrpPipelineAsset asset)
+        public KrpRenderPipeline(KrpPipelineAsset _)
         {
-            renderPipelineAsset = asset;
-
             // shader names differ depending if running this in KSP2 or testing in unity project
             Shader shader;
             shader = Shader.Find("Hidden/Internal-DeferredShading");
-            if (shader is null)
+            if (shader == null)
             {
                 shader = Shader.Find("Hidden/Graphics-DeferredShading");
             }
@@ -65,7 +52,6 @@ namespace TurboMode.Rendering
             //deferredReflections = CoreUtils.CreateEngineMaterial(shader);
 
             m_RenderGraph = new RenderGraph("KRP Render Graph");
-            commandBuffer.name = "KRP reusable";
 
             InitResources();
             RTHandles.Initialize(Screen.width, Screen.height);
@@ -79,9 +65,9 @@ namespace TurboMode.Rendering
                 {
                     name = "My Post-Processing Stack Full-Screen Triangle",
                     vertices = new Vector3[] {
-                        new Vector3(-1f, -1f, 0f),
-                        new Vector3(-1f,  3f, 0f),
-                        new Vector3( 3f, -1f, 0f)
+                        new (-1f, -1f, 0f),
+                        new (-1f,  3f, 0f),
+                        new ( 3f, -1f, 0f)
                     },
                     triangles = new int[] { 0, 1, 2 },
                 };
@@ -189,12 +175,14 @@ namespace TurboMode.Rendering
             if (!sharedHdrDisplay0Target || sharedHdrDisplay0Target.width != mainDisplay.renderingWidth || sharedHdrDisplay0Target.height != mainDisplay.renderingHeight)
             {
                 var hdrDisplayDesc = new RenderTextureDescriptor(mainDisplay.renderingWidth, mainDisplay.renderingHeight, RenderTextureFormat.DefaultHDR);
-                sharedHdrDisplay0Target = new RenderTexture(hdrDisplayDesc);
-                sharedHdrDisplay0Target.name = "KRP HDR shared buffer";
+                sharedHdrDisplay0Target = new(hdrDisplayDesc)
+                {
+                    name = "KRP HDR shared buffer"
+                };
             }
 
             CommandBuffer cmdRG = CommandBufferPool.Get("KRP main");
-            RenderGraphParameters rgParams = new RenderGraphParameters()
+            RenderGraphParameters rgParams = new()
             {
                 commandBuffer = cmdRG,
                 scriptableRenderContext = context,
@@ -209,7 +197,7 @@ namespace TurboMode.Rendering
                 // Iterate over all Cameras
                 foreach (Camera camera in cameras)
                 {
-                    if (camera.targetTexture is null)
+                    if (camera.targetTexture == null)
                     {
                         CreateCameraGraph(context, camera, m_RenderGraph, sharedHdrDisplay0TargetHandle);
                         usedDisplayTarget = true;
@@ -249,19 +237,20 @@ namespace TurboMode.Rendering
                 cmd.Release();
             }
 
+            s_KrpSubmitMarker.Begin();
             context.Submit();
+            s_KrpSubmitMarker.End();
 
             EndFrameRendering(context, cameras);
 
             m_RenderGraph.EndFrame();
-            frameIndex++;
         }
 
         private TextureHandle CreateCameraGraph(ScriptableRenderContext context, Camera camera, RenderGraph graph, TextureHandle cameraTarget)
         {
             TextureHandle result;
 
-            var cameraData = CameraBegin(context, graph, camera);
+            var cameraData = CameraBegin(graph, camera);
 
             var gBufferPass = CreateGBufferPass(graph, cameraData, cameraTarget);
             result = gBufferPass.gbuffers.emissive;
@@ -286,11 +275,6 @@ namespace TurboMode.Rendering
                 result = skybox.target;
             }
 
-            // forward opaque
-            // I can't get this to work without also rendering deferred objects (with shaders that support forward) as forward
-            //var forwardOpaque = CreateForwardOpaquePass(m_RenderGraph, cullingResults, camera, result, gBufferPass.gbuffers.depth);
-            //result = forwardOpaque.output;
-
             // transparent "SRPDefaultUnlit"
             var forwardTransparent = CreateForwardTransparentPass(m_RenderGraph, cameraData, result, gBufferPass.gbuffers.depth);
             result = forwardTransparent.output;
@@ -307,46 +291,42 @@ namespace TurboMode.Rendering
         private DeferredOpaqueGBufferData CreateGBufferPass(RenderGraph graph, KrpCameraData cameraData, TextureHandle lightingIn)
         {
             // TODO: check formats match KSP2
-            TextureHandle diffuse = CreateColorTexture(graph, cameraData.camera, "GBUFFER diffuse", Color.black, RenderTextureFormat.ARGB32, true);
-            TextureHandle specular = CreateColorTexture(graph, cameraData.camera, "GBUFFER specular", Color.black, RenderTextureFormat.ARGB32, true);
-            TextureHandle normals = CreateColorTexture(graph, cameraData.camera, "GBUFFER normals", Color.black, RenderTextureFormat.ARGB2101010, false);
-            TextureHandle depth = CreateDepthTexture(graph, cameraData.camera, "GBUFFER depth");
+            TextureHandle diffuse = Helpers.CreateColorTexture(graph, cameraData.camera, "GBUFFER diffuse", Color.black, RenderTextureFormat.ARGB32, true);
+            TextureHandle specular = Helpers.CreateColorTexture(graph, cameraData.camera, "GBUFFER specular", Color.black, RenderTextureFormat.ARGB32, true);
+            TextureHandle normals = Helpers.CreateColorTexture(graph, cameraData.camera, "GBUFFER normals", Color.black, RenderTextureFormat.ARGB2101010, false);
+            TextureHandle depth = Helpers.CreateDepthTexture(graph, cameraData.camera, "GBUFFER depth");
 
-            using (var builder = graph.AddRenderPass<DeferredOpaqueGBufferData>("KRP Opaque GBUFFER pass " + cameraData.camera.name, out var passData))
-            {
-                passData.cameraData = cameraData;
-                passData.gbuffers.gBuffer0 = builder.WriteTexture(diffuse);
-                passData.gbuffers.gBuffer1 = builder.WriteTexture(specular);
-                passData.gbuffers.normals = builder.WriteTexture(normals);
-                passData.gbuffers.emissive = builder.ReadWriteTexture(lightingIn);
-                passData.gbuffers.depth = builder.UseDepthBuffer(depth, DepthAccess.Write);
+            using var builder = graph.AddRenderPass<DeferredOpaqueGBufferData>("KRP Opaque GBUFFER pass " + cameraData.camera.name, out var passData);
+            passData.cameraData = cameraData;
+            passData.gbuffers.gBuffer0 = builder.WriteTexture(diffuse);
+            passData.gbuffers.gBuffer1 = builder.WriteTexture(specular);
+            passData.gbuffers.normals = builder.WriteTexture(normals);
+            passData.gbuffers.emissive = builder.ReadWriteTexture(lightingIn);
+            passData.gbuffers.depth = builder.UseDepthBuffer(depth, DepthAccess.Write);
 
-                builder.SetRenderFunc<DeferredOpaqueGBufferData>(RenderDeferredGBuffer);
-                return passData;
-            }
+            builder.SetRenderFunc<DeferredOpaqueGBufferData>(RenderDeferredGBuffer);
+            return passData;
         }
 
         DefferedCollectShadows CollectScreenSpaceShadowsPass(RenderGraph graph, TextureHandle deferredDepth, TextureHandle shadowMap, Camera camera)
         {
-            var screenSpaceShadowMap = CreateColorTexture(graph, camera, "ScreenSpaceShadowMap", Color.white);
-            using (var builder = graph.AddRenderPass<DefferedCollectShadows>("KRP Shadows.CollectShadows", out var passData))
+            var screenSpaceShadowMap = Helpers.CreateColorTexture(graph, camera, "ScreenSpaceShadowMap", Color.white);
+            using var builder = graph.AddRenderPass<DefferedCollectShadows>("KRP Shadows.CollectShadows", out var passData);
+            passData.deferredDepth = builder.ReadTexture(deferredDepth);
+            passData.shadowMap = builder.ReadTexture(shadowMap);
+            passData.screenSpaceShadowMap = builder.UseColorBuffer(screenSpaceShadowMap, 0);
+
+            builder.AllowPassCulling(false);
+
+            builder.SetRenderFunc((DefferedCollectShadows data, RenderGraphContext context) =>
             {
-                passData.deferredDepth = builder.ReadTexture(deferredDepth);
-                passData.shadowMap = builder.ReadTexture(shadowMap);
-                passData.screenSpaceShadowMap = builder.UseColorBuffer(screenSpaceShadowMap, 0);
+                context.cmd.SetGlobalTexture("_CameraDepthTexture", data.deferredDepth);
+                context.cmd.SetGlobalTexture("_ShadowMapTexture", data.shadowMap);
+                context.cmd.SetRenderTarget(data.screenSpaceShadowMap);
+                CoreUtils.DrawFullScreen(context.cmd, deferredScreenSpaceShadows);
+            });
 
-                builder.AllowPassCulling(false);
-
-                builder.SetRenderFunc((DefferedCollectShadows data, RenderGraphContext context) =>
-                {
-                    context.cmd.SetGlobalTexture("_CameraDepthTexture", data.deferredDepth);
-                    context.cmd.SetGlobalTexture("_ShadowMapTexture", data.shadowMap);
-                    context.cmd.SetRenderTarget(data.screenSpaceShadowMap);
-                    CoreUtils.DrawFullScreen(context.cmd, deferredScreenSpaceShadows);
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         DeferredDefaultReflections CreateDefferedDefaultReflectionsPass(RenderGraph graph, DeferredOpaqueGBufferData gBufferPass, TextureHandle target, CommandBuffer[] before, CommandBuffer[] after)
@@ -354,286 +334,219 @@ namespace TurboMode.Rendering
             // KSP2 doesn't actually use unity's environmental lightmapping.  It has a cubemap attached to the deferred shader.
             // However, the decal and terrain blending command buffers run here.  So if they are present we have to at least set render targets etc.
 
-            using (var builder = graph.AddRenderPass<DeferredDefaultReflections>("KRP reflection pass", out var passData))
+            using var builder = graph.AddRenderPass<DeferredDefaultReflections>("KRP reflection pass", out var passData);
+
+            passData.gbuffers.gBuffer0 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer0);
+            passData.gbuffers.gBuffer1 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer1);
+            passData.gbuffers.normals = builder.ReadTexture(gBufferPass.gbuffers.normals);
+            passData.gbuffers.depth = builder.ReadTexture(gBufferPass.gbuffers.depth);
+            //passData.temp = builder.CreateTransientTexture(target);
+            passData.lightBuffer = builder.WriteTexture(target);
+            passData.reflectionMaterial = deferredReflections;
+
+            passData.before = before;
+            passData.after = after;
+
+            builder.AllowPassCulling(false);
+
+            builder.SetRenderFunc((DeferredDefaultReflections data, RenderGraphContext context) =>
             {
+                context.cmd.SetGlobalTexture("_CameraGBufferTexture0", data.gbuffers.gBuffer0);
+                context.cmd.SetGlobalTexture("_CameraGBufferTexture1", data.gbuffers.gBuffer1);
+                context.cmd.SetGlobalTexture("_CameraGBufferTexture2", data.gbuffers.normals);
+                context.cmd.SetGlobalTexture("_CameraDepthTexture", data.gbuffers.depth);
 
-                passData.gbuffers.gBuffer0 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer0);
-                passData.gbuffers.gBuffer1 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer1);
-                passData.gbuffers.normals = builder.ReadTexture(gBufferPass.gbuffers.normals);
-                passData.gbuffers.depth = builder.ReadTexture(gBufferPass.gbuffers.depth);
-                //passData.temp = builder.CreateTransientTexture(target);
-                passData.lightBuffer = builder.WriteTexture(target);
-                passData.reflectionMaterial = deferredReflections;
-
-                passData.before = before;
-                passData.after = after;
-
-                builder.AllowPassCulling(false);
-
-                builder.SetRenderFunc((DeferredDefaultReflections data, RenderGraphContext context) =>
+                context.renderContext.ExecuteCommandBuffer(context.cmd);
+                context.cmd.Clear();
+                foreach (var cmd in data.before)
                 {
-                    // I worked out most of this before I realized I didn't need it :-\
+                    context.renderContext.ExecuteCommandBuffer(cmd);
+                }
 
-                    //MaterialPropertyBlock properties = new MaterialPropertyBlock();
-                    //properties.SetFloat("_LightAsQuad", 1f);
-                    //properties.SetVector("unity_SpecCube0_BoxMax", new Vector4(float.PositiveInfinity, float.PositiveInfinity, float.PositiveInfinity, 1));
-                    //properties.SetVector("unity_SpecCube0_BoxMin", new Vector4(float.NegativeInfinity, float.NegativeInfinity, float.NegativeInfinity, 1));
-                    //properties.SetVector("unity_SpecCube0_ProbePosition", Vector4.zero);
-                    //properties.SetVector("unity_SpecCube0_HDR", new Vector4(1f, 1f, 0f, 0f));
-                    //properties.SetVector("unity_SpecCube1_ProbePosition", new Vector4(0f, 0f, 0f, 1f));
+                context.cmd.SetRenderTarget(data.lightBuffer);
 
-                    context.cmd.SetGlobalTexture("_CameraGBufferTexture0", data.gbuffers.gBuffer0);
-                    context.cmd.SetGlobalTexture("_CameraGBufferTexture1", data.gbuffers.gBuffer1);
-                    context.cmd.SetGlobalTexture("_CameraGBufferTexture2", data.gbuffers.normals);
-                    context.cmd.SetGlobalTexture("_CameraDepthTexture", data.gbuffers.depth);
+                foreach (var cmd in data.after)
+                {
+                    context.renderContext.ExecuteCommandBuffer(cmd);
+                }
+            });
 
-                    context.renderContext.ExecuteCommandBuffer(context.cmd);
-                    context.cmd.Clear();
-                    foreach (var cmd in data.before)
-                    {
-                        context.renderContext.ExecuteCommandBuffer(cmd);
-                    }
-
-                    //context.cmd.SetRenderTarget(data.temp);
-                    //context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
-                    //DrawFullScreenTriangle(context.cmd, data.reflectionMaterial, properties, 0);
-
-                    context.cmd.SetRenderTarget(data.lightBuffer);
-                    //properties.SetTexture("_CameraReflectionsTexture", data.temp);
-                    //DrawFullScreenTriangle(context.cmd, data.reflectionMaterial, properties, 1);
-
-                    foreach (var cmd in data.after)
-                    {
-                        context.renderContext.ExecuteCommandBuffer(cmd);
-                    }
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         DeferredOpaqueLighting CreateDeferredOpaqueLightingPass(RenderGraph graph, KrpCameraData cameraData, DeferredOpaqueGBufferData gBufferPass, TextureHandle target)
         {
-            using (var builder = graph.AddRenderPass<DeferredOpaqueLighting>("KRP Deferred light pass " + cameraData.camera.name, out var passData))
+            using var builder = graph.AddRenderPass<DeferredOpaqueLighting>("KRP Deferred light pass " + cameraData.camera.name, out var passData);
+            passData.cameraData = cameraData;
+            passData.lightMaterial = deferredLighting;
+
+            passData.gbuffer0 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer0);
+            passData.gbuffer1 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer1);
+            passData.gbuffer2 = builder.ReadTexture(gBufferPass.gbuffers.normals);
+            passData.gbufferDepth = builder.ReadTexture(gBufferPass.gbuffers.depth);
+            passData.result = builder.WriteTexture(target);
+
+            //builder.AllowPassCulling(false);
+
+            builder.SetRenderFunc((DeferredOpaqueLighting data, RenderGraphContext context) =>
             {
-                passData.cameraData = cameraData;
-                passData.lightMaterial = deferredLighting;
+                context.cmd.SetGlobalTexture("_CameraDepthTexture", data.gbufferDepth);
+                //context.cmd.SetGlobalTexture("_ShadowMapTexture", data.shadowMap);
+                context.cmd.SetGlobalTexture("_CameraGBufferTexture0", data.gbuffer0);
+                context.cmd.SetGlobalTexture("_CameraGBufferTexture1", data.gbuffer1);
+                context.cmd.SetGlobalTexture("_CameraGBufferTexture2", data.gbuffer2);
 
-                passData.gbuffer0 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer0);
-                passData.gbuffer1 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer1);
-                passData.gbuffer2 = builder.ReadTexture(gBufferPass.gbuffers.normals);
-                passData.gbufferDepth = builder.ReadTexture(gBufferPass.gbuffers.depth);
-                passData.result = builder.WriteTexture(target);
+                context.cmd.SetRenderTarget(data.result, data.gbufferDepth);
 
-                //builder.AllowPassCulling(false);
+                context.cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
-                builder.SetRenderFunc((DeferredOpaqueLighting data, RenderGraphContext context) =>
+                foreach (var light in data.cameraData.cullingResults.visibleLights)
                 {
-                    context.cmd.SetGlobalTexture("_CameraDepthTexture", data.gbufferDepth);
-                    //context.cmd.SetGlobalTexture("_ShadowMapTexture", data.shadowMap);
-                    context.cmd.SetGlobalTexture("_CameraGBufferTexture0", data.gbuffer0);
-                    context.cmd.SetGlobalTexture("_CameraGBufferTexture1", data.gbuffer1);
-                    context.cmd.SetGlobalTexture("_CameraGBufferTexture2", data.gbuffer2);
+                    MaterialPropertyBlock lightInfo = new();
 
-                    context.cmd.SetRenderTarget(data.result, data.gbufferDepth);
-
-                    context.cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
-
-                    foreach (var light in data.cameraData.cullingResults.visibleLights)
+                    switch (light.lightType)
                     {
-                        MaterialPropertyBlock lightInfo = new MaterialPropertyBlock();
+                        case LightType.Directional:
+                            context.cmd.EnableShaderKeyword("DIRECTIONAL");
+                            context.cmd.DisableShaderKeyword("POINT");
 
-                        switch (light.lightType)
-                        {
-                            case LightType.Directional:
-                                context.cmd.EnableShaderKeyword("DIRECTIONAL");
-                                context.cmd.DisableShaderKeyword("POINT");
-
-                                var forward = light.localToWorldMatrix * new Vector4(0, 0, 1, 0); // forward vector as a vector4
-                                lightInfo.SetVector("_LightDir", forward);
-                                lightInfo.SetColor("_LightColor", light.finalColor);
-                                lightInfo.SetFloat("_LightAsQuad", 1);
-                                break;
-                            default:
-                                continue;
-                        }
-
-                        context.cmd.DrawMesh(fullScreenTriangle, Matrix4x4.identity, passData.lightMaterial, 0, 0, lightInfo);
+                            var forward = light.localToWorldMatrix * new Vector4(0, 0, 1, 0); // forward vector as a vector4
+                            lightInfo.SetVector("_LightDir", forward);
+                            lightInfo.SetColor("_LightColor", light.finalColor);
+                            lightInfo.SetFloat("_LightAsQuad", 1);
+                            break;
+                        default:
+                            continue;
                     }
 
-                    context.cmd.SetViewProjectionMatrices(data.cameraData.camera.worldToCameraMatrix, data.cameraData.camera.projectionMatrix);
-                });
+                    context.cmd.DrawMesh(fullScreenTriangle, Matrix4x4.identity, passData.lightMaterial, 0, 0, lightInfo);
+                }
 
-                return passData;
-            }
-        }
+                context.cmd.SetViewProjectionMatrices(data.cameraData.camera.worldToCameraMatrix, data.cameraData.camera.projectionMatrix);
+            });
 
-        private ForwardOpaque CreateForwardOpaquePass(RenderGraph graph, CullingResults cullingResults, Camera forCamera, TextureHandle src, TextureHandle depth)
-        {
-            using (var builder = graph.AddRenderPass<ForwardOpaque>("KRP Forward Opaque", out var passData))
-            {
-                passData.output = builder.ReadWriteTexture(src);
-                passData.depth = builder.ReadTexture(depth);
-                passData.camera = forCamera;
-
-                // culling
-                RendererListDesc rendererDesc_base_Opaque = new RendererListDesc(forwardOpaqueTags, cullingResults, forCamera)
-                {
-                    sortingCriteria = SortingCriteria.CommonOpaque,
-                    renderQueueRange = RenderQueueRange.opaque,
-                    rendererConfiguration = PerObjectData.None,
-                };
-                RendererListHandle handle = graph.CreateRendererList(rendererDesc_base_Opaque);
-                passData.forwardOpaqueRenderers = builder.UseRendererList(handle);
-
-                builder.SetRenderFunc((ForwardOpaque data, RenderGraphContext context) =>
-                {
-                    var camera = data.camera;
-
-                    context.renderContext.SetupCameraProperties(camera);
-                    context.cmd.SetRenderTarget(data.output, data.depth);
-
-                    context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
-                    context.cmd.EnableShaderKeyword("DIRECTIONAL");
-
-                    //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.BeforeForwardAlpha);
-                    CoreUtils.DrawRendererList(context.renderContext, context.cmd, data.forwardOpaqueRenderers);
-                    //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.AfterForwardAlpha);
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         private ForwardTransparent CreateForwardTransparentPass(RenderGraph graph, KrpCameraData cameraData, TextureHandle src, TextureHandle depth)
         {
-            using (var builder = graph.AddRenderPass<ForwardTransparent>("KRP Forward Transparent", out var passData))
+            using var builder = graph.AddRenderPass<ForwardTransparent>("KRP Forward Transparent", out var passData);
+            passData.output = builder.ReadWriteTexture(src);
+            passData.depth = builder.ReadTexture(depth);
+            passData.cameraData = cameraData;
+
+            builder.SetRenderFunc((ForwardTransparent data, RenderGraphContext context) =>
             {
-                passData.output = builder.ReadWriteTexture(src);
-                passData.depth = builder.ReadTexture(depth);
-                passData.cameraData = cameraData;
+                s_KrpTransparentMarker.Begin(data.cameraData.camera);
+                var camera = data.cameraData.camera;
 
-                builder.SetRenderFunc((ForwardTransparent data, RenderGraphContext context) =>
+                // culling
+                RendererListDesc rendererDesc_base_Opaque = new(transparentPassTags, cameraData.cullingResults, cameraData.camera)
                 {
-                    var camera = data.cameraData.camera;
+                    sortingCriteria = SortingCriteria.CommonTransparent,
+                    renderQueueRange = RenderQueueRange.transparent,
+                    rendererConfiguration = (PerObjectData)0xfff, // PerObjectData.ReflectionProbes,
+                };
+                var rendererList = context.renderContext.CreateRendererList(rendererDesc_base_Opaque);
 
-                    // culling
-                    RendererListDesc rendererDesc_base_Opaque = new RendererListDesc(transparentPassTags, cameraData.cullingResults, cameraData.camera)
-                    {
-                        sortingCriteria = SortingCriteria.CommonTransparent,
-                        renderQueueRange = RenderQueueRange.transparent,
-                        rendererConfiguration = (PerObjectData)0xfff, // PerObjectData.ReflectionProbes,
-                    };
-                    var rendererList = context.renderContext.CreateRendererList(rendererDesc_base_Opaque);
+                context.renderContext.SetupCameraProperties(camera);
+                CoreUtils.SetRenderTarget(context.cmd, passData.output, passData.depth);
 
-                    context.renderContext.SetupCameraProperties(camera);
-                    CoreUtils.SetRenderTarget(context.cmd, passData.output, passData.depth);
+                context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
 
-                    context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
+                context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
 
-                    context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
+                //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.BeforeForwardAlpha);
+                CoreUtils.DrawRendererList(context.renderContext, context.cmd, rendererList);
+                //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.AfterForwardAlpha);
+                s_KrpTransparentMarker.End();
+            });
 
-                    //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.BeforeForwardAlpha);
-                    CoreUtils.DrawRendererList(context.renderContext, context.cmd, rendererList);
-                    //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.AfterForwardAlpha);
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         private BlitCopy CreateBlit(RenderGraph graph, TextureHandle src, ref TextureHandle dest, string name = "KRP blit")
         {
-            using (var builder = graph.AddRenderPass<BlitCopy>(name, out var passData))
+            using var builder = graph.AddRenderPass<BlitCopy>(name, out var passData);
+            passData.source = builder.ReadTexture(src);
+            passData.dest = dest = builder.WriteTexture(dest);
+
+            builder.AllowPassCulling(false);
+
+            builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
             {
-                passData.source = builder.ReadTexture(src);
-                passData.dest = dest = builder.WriteTexture(dest);
+                context.cmd.Blit(data.source, data.dest);
+            });
 
-                builder.AllowPassCulling(false);
-
-                builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
-                {
-                    context.cmd.Blit(data.source, data.dest);
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         private void BlitToDisplayBackBuffer(RenderGraph graph, TextureHandle source)
         {
-            using (var builder = graph.AddRenderPass<BlitCopy>("KRP HDR to display", out var passData))
+            using var builder = graph.AddRenderPass<BlitCopy>("KRP HDR to display", out var passData);
+            builder.AllowPassCulling(false);
+            passData.source = builder.ReadTexture(source);
+            builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
             {
-                builder.AllowPassCulling(false);
-                passData.source = builder.ReadTexture(source);
-                builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
-                {
-                    // todo.. postprocess material?
-                    context.cmd.Blit(null, BuiltinRenderTextureType.CameraTarget);
-                });
-            }
+                // todo.. postprocess material?
+                context.cmd.Blit(null, BuiltinRenderTextureType.CameraTarget);
+            });
         }
 
         private void ClearHdrBuffer(RenderGraph graph, TextureHandle source)
         {
-            using (var builder = graph.AddRenderPass<BlitCopy>("KRP clear HDR display", out var passData))
+            using var builder = graph.AddRenderPass<BlitCopy>("KRP clear HDR display", out var passData);
+            builder.AllowPassCulling(false);
+            passData.source = builder.WriteTexture(source);
+            builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
             {
-                builder.AllowPassCulling(false);
-                passData.source = builder.WriteTexture(source);
-                builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
-                {
-                    //context.cmd.ClearRenderTarget(true, true, Color.black);
-                });
-            }
+                //context.cmd.ClearRenderTarget(true, true, Color.black);
+            });
         }
 
         private BlitCopy ResolveDepth(RenderGraph graph, TextureHandle src, TextureHandle dest, bool allowPassCull = false)
         {
-            using (var builder = graph.AddRenderPass<BlitCopy>("KRP depth copy", out var passData))
+            using var builder = graph.AddRenderPass<BlitCopy>("KRP depth copy", out var passData);
+            passData.source = src;
+            passData.dest = dest;
+
+            builder.WriteTexture(dest);
+            builder.ReadTexture(src);
+            builder.AllowPassCulling(allowPassCull);
+
+            builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
             {
-                passData.source = src;
-                passData.dest = dest;
+                //var srcDepth = ((RenderTexture)data.source).depthBuffer;
+                //var srcDepth = data.source;
+                //var targetDepth = ((RenderTexture)data.dest).depthBuffer;
+                context.cmd.ResolveAntiAliasedSurface(src, dest);
+                //context.cmd.Blit(src, dest);
+                //context.cmd.Blit(src, ((RenderTexture)data.dest).depthBuffer);
+            });
 
-                builder.WriteTexture(dest);
-                builder.ReadTexture(src);
-                builder.AllowPassCulling(allowPassCull);
-
-                builder.SetRenderFunc((BlitCopy data, RenderGraphContext context) =>
-                {
-                    //var srcDepth = ((RenderTexture)data.source).depthBuffer;
-                    //var srcDepth = data.source;
-                    //var targetDepth = ((RenderTexture)data.dest).depthBuffer;
-                    context.cmd.ResolveAntiAliasedSurface(src, dest);
-                    //context.cmd.Blit(src, dest);
-                    //context.cmd.Blit(src, ((RenderTexture)data.dest).depthBuffer);
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         private DrawSkybox CreateSkybox(Camera camera, RenderGraph graph, TextureHandle dest, TextureHandle destDepth)
         {
-            using (var builder = graph.AddRenderPass<DrawSkybox>("KRP skybox", out var passData))
+            using var builder = graph.AddRenderPass<DrawSkybox>("KRP skybox", out var passData);
+            passData.target = builder.ReadWriteTexture(dest);
+            passData.camera = camera;
+            passData.targetDepth = builder.ReadTexture(destDepth);
+
+            builder.SetRenderFunc((DrawSkybox data, RenderGraphContext context) =>
             {
-                passData.target = builder.ReadWriteTexture(dest);
-                passData.camera = camera;
-                passData.targetDepth = builder.ReadTexture(destDepth);
+                context.cmd.SetRenderTarget(data.target, data.targetDepth);
+                context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
 
-                builder.SetRenderFunc((DrawSkybox data, RenderGraphContext context) =>
-                {
-                    context.cmd.SetRenderTarget(data.target, data.targetDepth);
-                    context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
+                // without flushing the buffer, the render target setting here doesn't always apply.
+                context.renderContext.ExecuteCommandBuffer(context.cmd);
+                context.cmd.Clear();
 
-                    // without flushing the buffer, the render target setting here doesn't always apply.
-                    context.renderContext.ExecuteCommandBuffer(context.cmd);
-                    context.cmd.Clear();
+                context.renderContext.DrawSkybox(data.camera);
+            });
 
-                    context.renderContext.DrawSkybox(data.camera);
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
         private void ExecuteCommandBuffersForEvent(ScriptableRenderContext context, Camera camera, CameraEvent cameraEvent)
@@ -654,7 +567,8 @@ namespace TurboMode.Rendering
 
         private void RenderDeferredGBuffer(DeferredOpaqueGBufferData data, RenderGraphContext ctx)
         {
-            RendererListDesc rendererDesc_base_Opaque = new RendererListDesc(deferredPassTag, data.cameraData.cullingResults, data.cameraData.camera)
+            s_KrpOpaqueMarker.Begin(data.cameraData.camera);
+            RendererListDesc rendererDesc_base_Opaque = new(deferredPassTag, data.cameraData.cullingResults, data.cameraData.camera)
             {
                 sortingCriteria = SortingCriteria.CommonOpaque,
                 renderQueueRange = RenderQueueRange.opaque,
@@ -678,69 +592,31 @@ namespace TurboMode.Rendering
             ExecuteCommandBuffersForEvent(ctx.renderContext, camera, CameraEvent.BeforeGBuffer);
             CoreUtils.DrawRendererList(ctx.renderContext, ctx.cmd, opaqueRenderers);
             ExecuteCommandBuffersForEvent(ctx.renderContext, camera, CameraEvent.AfterGBuffer);
+            s_KrpOpaqueMarker.End();
         }
 
-        private KrpCameraData CameraBegin(ScriptableRenderContext context, RenderGraph graph, Camera camera)
+        private KrpCameraData CameraBegin(RenderGraph graph, Camera camera)
         {
-            using (var builder = graph.AddRenderPass<KrpCameraData>("KRP begin camera", out var passData))
+            using var builder = graph.AddRenderPass<KrpCameraData>("KRP begin camera", out var passData);
+            passData.camera = camera;
+
+            builder.AllowPassCulling(false);
+
+            builder.SetRenderFunc((KrpCameraData data, RenderGraphContext context) =>
             {
-                passData.camera = camera;
+                BeginCameraRendering(context.renderContext, data.camera);
 
-                builder.AllowPassCulling(false);
+                // todo: Camera.onPreCull
+                data.camera.TryGetCullingParameters(out var cullingParameters);
+                data.cullingResults = context.renderContext.Cull(ref cullingParameters);
 
-                builder.SetRenderFunc((KrpCameraData data, RenderGraphContext context) =>
-                {
-                    BeginCameraRendering(context.renderContext, data.camera);
+                // todo: Camera.onPreRender
 
-                    // todo: Camera.onPreCull
-                    data.camera.TryGetCullingParameters(out var cullingParameters);
-                    data.cullingResults = context.renderContext.Cull(ref cullingParameters);
+                // todo: run legacy camera command buffers?
+            });
 
-                    // todo: Camera.onPreRender
-
-                    // todo: run legacy camera command buffers?
-                });
-
-                return passData;
-            }
+            return passData;
         }
 
-        #region cribbed buffer creation //  https://github.com/cinight/CustomSRP/blob/2022.1/Assets/SRP0802_RenderGraph/SRP0802_RenderGraph.BasePass.cs
-
-
-        private static TextureHandle CreateColorTexture(RenderGraph graph, Camera camera, string name)
-        => CreateColorTexture(graph, camera, name, Color.black);
-
-        private static TextureHandle CreateColorTexture(RenderGraph graph, Camera camera, string name, Color clearColor, RenderTextureFormat format = RenderTextureFormat.ARGB32, bool sRGB = false)
-        {
-            TextureDesc colorRTDesc = new TextureDesc(camera.pixelWidth, camera.pixelHeight)
-            {
-                colorFormat = GraphicsFormatUtility.GetGraphicsFormat(format, sRGB),
-                depthBufferBits = 0,
-                msaaSamples = MSAASamples.None,
-                enableRandomWrite = false,
-                clearBuffer = true,
-                clearColor = Color.black,
-                name = name
-            };
-
-            return graph.CreateTexture(colorRTDesc);
-        }
-
-        private static TextureHandle CreateDepthTexture(RenderGraph graph, Camera camera, string name)
-        {
-            TextureDesc colorRTDesc = new TextureDesc(camera.pixelWidth, camera.pixelHeight)
-            {
-                colorFormat = GraphicsFormatUtility.GetGraphicsFormat(RenderTextureFormat.Depth, false),
-                depthBufferBits = DepthBits.Depth32,
-                msaaSamples = MSAASamples.None,
-                enableRandomWrite = false,
-                clearBuffer = true,
-                name = name,
-            };
-
-            return graph.CreateTexture(colorRTDesc);
-        }
-        #endregion
     }
 }

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Xml.Linq;
 using Unity.Collections;
 using Unity.Profiling;
 using UnityEngine;
@@ -28,8 +25,17 @@ namespace TurboMode.Rendering
         static Material deferredReflections;
         static Mesh fullScreenTriangle;
 
+        // https://docs.unity3d.com/Manual/shader-predefined-pass-tags-built-in.html
         private static readonly ShaderTagId deferredPassTag = new ShaderTagId("DEFERRED");
         private static readonly ShaderTagId transparentPassTag = new ShaderTagId("SRPDefaultUnlit");
+        private static readonly ShaderTagId[] forwardOpaqueTags = {
+            new ShaderTagId("FORWARDBASE"),
+        };
+        private static readonly ShaderTagId[] transparentPassTags = {
+            new ShaderTagId("FORWARDBASE"), // "KSP2/Scenery/Standard (Transparent)"
+            new ShaderTagId("ForwardAdd"),
+            new ShaderTagId("SRPDefaultUnlit"),
+        };
 
 
         CommandBuffer commandBuffer = new CommandBuffer();
@@ -68,7 +74,7 @@ namespace TurboMode.Rendering
 
         private void InitResources()
         {
-            if(!fullScreenTriangle)
+            if (!fullScreenTriangle)
             {
                 fullScreenTriangle = new Mesh
                 {
@@ -148,10 +154,18 @@ namespace TurboMode.Rendering
             public TextureHandle targetDepth;
         }
 
+        class ForwardOpaque
+        {
+            public Camera camera;
+            public RendererListHandle forwardOpaqueRenderers;
+            public TextureHandle output;
+            public TextureHandle depth;
+        }
+
         class ForwardTransparent
         {
             public Camera camera;
-            public RendererListHandle transparentRenderers;
+            public RendererListHandle forwardTransparentRenderers;
             public TextureHandle output;
             public TextureHandle depth;
         }
@@ -270,9 +284,14 @@ namespace TurboMode.Rendering
                 result = skybox.target;
             }
 
+            // forward opaque
+            // I can't get this to work without also rendering deferred objects (with shaders that support forward) as forward
+            //var forwardOpaque = CreateForwardOpaquePass(m_RenderGraph, cullingResults, camera, result, gBufferPass.gbuffers.depth);
+            //result = forwardOpaque.output;
+
             // transparent "SRPDefaultUnlit"
-            //var forwardTransparent = CreateForwardTransparentPass(m_RenderGraph, cullingResults, camera, result, gBufferPass.gbuffers.depth);
-            //result = forwardTransparent.output;
+            var forwardTransparent = CreateForwardTransparentPass(m_RenderGraph, cullingResults, camera, result, gBufferPass.gbuffers.depth);
+            result = forwardTransparent.output;
 
             EndCameraRendering(context, camera);
             //Camera.SetupCurrent(camera);
@@ -350,12 +369,14 @@ namespace TurboMode.Rendering
                 passData.gbuffers.gBuffer1 = builder.ReadTexture(gBufferPass.gbuffers.gBuffer1);
                 passData.gbuffers.normals = builder.ReadTexture(gBufferPass.gbuffers.normals);
                 passData.gbuffers.depth = builder.ReadTexture(gBufferPass.gbuffers.depth);
-                passData.temp = builder.CreateTransientTexture(target);
+                //passData.temp = builder.CreateTransientTexture(target);
                 passData.lightBuffer = builder.WriteTexture(target);
                 passData.reflectionMaterial = deferredReflections;
 
                 passData.before = before;
                 passData.after = after;
+
+                builder.AllowPassCulling(false);
 
                 builder.SetRenderFunc((DeferredDefaultReflections data, RenderGraphContext context) =>
                 {
@@ -423,15 +444,9 @@ namespace TurboMode.Rendering
                     context.cmd.SetGlobalTexture("_CameraGBufferTexture1", data.gbuffer1);
                     context.cmd.SetGlobalTexture("_CameraGBufferTexture2", data.gbuffer2);
 
-                    //CoreUtils.SetRenderTarget(context.cmd, data.target, data.gbufferDepth);
                     context.cmd.SetRenderTarget(data.result, data.gbufferDepth);
-                    context.cmd.SetGlobalMatrix("unity_MatrixV", Matrix4x4.identity);
-                    var vp = Matrix4x4.TRS(
-                        new Vector3(0, 0, 1),
-                        Quaternion.identity,
-                        new Vector3(1, -1, 1f));
-                    context.cmd.SetGlobalMatrix("unity_MatrixVP", vp);
-                    //context.cmd.SetGlobalMatrix("unity_MatrixVP", Matrix4x4.identity);
+
+                    context.cmd.SetViewProjectionMatrices(Matrix4x4.identity, Matrix4x4.identity);
 
                     foreach (var light in data.visibleLights)
                     {
@@ -452,18 +467,52 @@ namespace TurboMode.Rendering
                                 continue;
                         }
 
-                        //CoreUtils.DrawFullScreen(context.cmd, data.lightMaterial, lightInfo);
-                        //context.cmd.DrawMesh(quad, Matrix4x4.identity, data.lightMaterial, 0, 0, lightInfo);
-                        //context.cmd.DrawMesh(fullScreenTriangle, Matrix4x4.identity, data.lightMaterial, 0, 0, lightInfo);
-                        DrawFullScreenTriangle(context.cmd, data.lightMaterial, lightInfo);
+                        context.cmd.DrawMesh(fullScreenTriangle, Matrix4x4.identity, passData.lightMaterial, 0, 0, lightInfo);
                     }
 
+                    context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
                 });
 
                 return passData;
             }
         }
 
+        private ForwardOpaque CreateForwardOpaquePass(RenderGraph graph, CullingResults cullingResults, Camera forCamera, TextureHandle src, TextureHandle depth)
+        {
+            using (var builder = graph.AddRenderPass<ForwardOpaque>("KRP Forward Opaque", out var passData))
+            {
+                passData.output = builder.ReadWriteTexture(src);
+                passData.depth = builder.ReadTexture(depth);
+                passData.camera = forCamera;
+
+                // culling
+                RendererListDesc rendererDesc_base_Opaque = new RendererListDesc(forwardOpaqueTags, cullingResults, forCamera)
+                {
+                    sortingCriteria = SortingCriteria.CommonOpaque,
+                    renderQueueRange = RenderQueueRange.opaque,
+                    rendererConfiguration = PerObjectData.None,
+                };
+                RendererListHandle handle = graph.CreateRendererList(rendererDesc_base_Opaque);
+                passData.forwardOpaqueRenderers = builder.UseRendererList(handle);
+
+                builder.SetRenderFunc((ForwardOpaque data, RenderGraphContext context) =>
+                {
+                    var camera = data.camera;
+
+                    context.renderContext.SetupCameraProperties(camera);
+                    context.cmd.SetRenderTarget(data.output, data.depth);
+
+                    context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
+                    context.cmd.EnableShaderKeyword("DIRECTIONAL");
+
+                    //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.BeforeForwardAlpha);
+                    CoreUtils.DrawRendererList(context.renderContext, context.cmd, data.forwardOpaqueRenderers);
+                    //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.AfterForwardAlpha);
+                });
+
+                return passData;
+            }
+        }
 
         private ForwardTransparent CreateForwardTransparentPass(RenderGraph graph, CullingResults cullingResults, Camera forCamera, TextureHandle src, TextureHandle depth)
         {
@@ -474,27 +523,28 @@ namespace TurboMode.Rendering
                 passData.camera = forCamera;
 
                 // culling
-                RendererListDesc rendererDesc_base_Opaque = new RendererListDesc(transparentPassTag, cullingResults, forCamera)
+                RendererListDesc rendererDesc_base_Opaque = new RendererListDesc(transparentPassTags, cullingResults, forCamera)
                 {
                     sortingCriteria = SortingCriteria.CommonTransparent,
                     renderQueueRange = RenderQueueRange.transparent,
-                    rendererConfiguration = PerObjectData.None,
+                    rendererConfiguration = (PerObjectData)0xfff, // PerObjectData.ReflectionProbes,
                 };
                 RendererListHandle handle = graph.CreateRendererList(rendererDesc_base_Opaque);
-                passData.transparentRenderers = builder.UseRendererList(handle);
+                passData.forwardTransparentRenderers = builder.UseRendererList(handle);
 
                 builder.SetRenderFunc((ForwardTransparent data, RenderGraphContext context) =>
                 {
                     var camera = data.camera;
 
                     context.renderContext.SetupCameraProperties(camera);
-                    context.cmd.SetRenderTarget(data.output, data.depth);
+                    CoreUtils.SetRenderTarget(context.cmd, passData.output, passData.depth);
 
                     context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
-                    //context.cmd.EnableShaderKeyword("LIGHTPROBE_SH");
+
+                    context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
 
                     //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.BeforeForwardAlpha);
-                    CoreUtils.DrawRendererList(context.renderContext, context.cmd, data.transparentRenderers);
+                    CoreUtils.DrawRendererList(context.renderContext, context.cmd, data.forwardTransparentRenderers);
                     //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.AfterForwardAlpha);
                 });
 
@@ -583,9 +633,12 @@ namespace TurboMode.Rendering
                 builder.SetRenderFunc((DrawSkybox data, RenderGraphContext context) =>
                 {
                     context.cmd.SetRenderTarget(data.target, data.targetDepth);
+                    context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
+
                     // without flushing the buffer, the render target setting here doesn't always apply.
                     context.renderContext.ExecuteCommandBuffer(context.cmd);
                     context.cmd.Clear();
+
                     context.renderContext.DrawSkybox(data.camera);
                 });
 
@@ -622,8 +675,7 @@ namespace TurboMode.Rendering
             ctx.renderContext.SetupCameraProperties(camera);
 
             ctx.cmd.EnableShaderKeyword("UNITY_HDR_ON");
-            ctx.cmd.EnableShaderKeyword("LIGHTPROBE_SH");
-            Shader.EnableKeyword("LIGHTPROBE_SH");
+            ctx.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
 
             ExecuteCommandBuffersForEvent(ctx.renderContext, camera, CameraEvent.BeforeGBuffer);
             CoreUtils.DrawRendererList(ctx.renderContext, ctx.cmd, data.opaqueRenderers);
@@ -667,16 +719,5 @@ namespace TurboMode.Rendering
             return graph.CreateTexture(colorRTDesc);
         }
         #endregion
-
-        private static void DrawFullScreenTriangle(CommandBuffer cmd, Material material, MaterialPropertyBlock properties, int pass = 0)
-        {
-            cmd.SetGlobalMatrix("unity_MatrixV", Matrix4x4.identity);
-            var vp = Matrix4x4.TRS(
-                new Vector3(-1, 1, 1),
-                Quaternion.identity,
-                new Vector3(2, -2, 0.001f));
-            cmd.SetGlobalMatrix("unity_MatrixVP", vp);
-            cmd.DrawMesh(fullScreenTriangle, Matrix4x4.identity, material, 0, pass, properties);
-        }
     }
 }

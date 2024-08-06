@@ -14,6 +14,7 @@ namespace TurboMode.Rendering
 
         static readonly ProfilerMarker s_KrpRecordGraph = new("KrpRenderPipeline record RenderGraph");
         static readonly ProfilerMarker s_KrpOpaqueMarker = new("KrpRenderPipeline opaque GBUFFER");
+        static readonly ProfilerMarker s_KrpForwardOpaqueMarker = new("KrpRenderPipeline forward opaque");
         static readonly ProfilerMarker s_KrpTransparentMarker = new("KrpRenderPipeline transparent");
         static readonly ProfilerMarker s_KrpSubmitMarker = new("KrpRenderPipeline context submit");
         static readonly ProfilerMarker s_KrpExternalCallbacks = new("KrpRenderPipeline (external callbacks)");
@@ -30,6 +31,14 @@ namespace TurboMode.Rendering
             new ("ForwardAdd"),
             new ("SRPDefaultUnlit"),
         };
+
+        // I haven't found a good way to do forward opaque in the main camera,
+        // because the part shaders would be double-rendered as both forward and deferred.
+        // However, the planet shaders in the scaled camera that I checked are forward only
+        // and live on a different layer.  So if a camera has that layer,
+        // we _probably_ won't get deferred objects.
+        // It's a hack, but I really don't want to have to rewrite every last forward opaque shader.
+        private static readonly int scaledCameraLayer = LayerMask.NameToLayer("Scaled.Scenery");
 
         public KrpRenderPipeline(KrpPipelineAsset _)
         {
@@ -153,8 +162,7 @@ namespace TurboMode.Rendering
 
         class ForwardOpaque
         {
-            public Camera camera;
-            public RendererListHandle forwardOpaqueRenderers;
+            public KrpCameraData cameraData;
             public TextureHandle output;
             public TextureHandle depth;
         }
@@ -162,7 +170,6 @@ namespace TurboMode.Rendering
         class ForwardTransparent
         {
             public KrpCameraData cameraData;
-            public RendererListHandle forwardTransparentRenderers;
             public TextureHandle output;
             public TextureHandle depth;
         }
@@ -255,6 +262,7 @@ namespace TurboMode.Rendering
         private TextureHandle CreateCameraGraph(ScriptableRenderContext context, Camera camera, RenderGraph graph, TextureHandle cameraTarget)
         {
             TextureHandle result;
+            bool hasScaledSpaceLayer = (camera.cullingMask | scaledCameraLayer) > 0;
 
             var cameraData = CameraBegin(graph, camera);
 
@@ -274,6 +282,12 @@ namespace TurboMode.Rendering
 
             var lightPass = CreateDeferredOpaqueLightingPass(m_RenderGraph, cameraData, gBufferPass, result);
             result = lightPass.result;
+
+            if (hasScaledSpaceLayer)
+            {
+                var forwardOpaque = CreateForwardOpaquePass(m_RenderGraph, cameraData, result, gBufferPass.gbuffers.depth);
+                result = forwardOpaque.output;
+            }
 
             if (camera.clearFlags != CameraClearFlags.Nothing)
             {
@@ -430,6 +444,43 @@ namespace TurboMode.Rendering
             return passData;
         }
 
+        private ForwardOpaque CreateForwardOpaquePass(RenderGraph graph, KrpCameraData cameraData, TextureHandle src, TextureHandle depth)
+        {
+            using var builder = graph.AddRenderPass<ForwardOpaque>("KRP Forward Opaque", out var passData);
+            passData.output = builder.ReadWriteTexture(src);
+            passData.depth = builder.ReadTexture(depth);
+            passData.cameraData = cameraData;
+
+            builder.SetRenderFunc((ForwardOpaque data, RenderGraphContext context) =>
+            {
+                s_KrpForwardOpaqueMarker.Begin(data.cameraData.camera);
+                var camera = data.cameraData.camera;
+
+                // culling
+                RendererListDesc rendererDesc_base_Opaque = new(transparentPassTags, cameraData.cullingResults, cameraData.camera)
+                {
+                    sortingCriteria = SortingCriteria.CommonOpaque,
+                    renderQueueRange = RenderQueueRange.opaque,
+                    rendererConfiguration = (PerObjectData)0xfff, // PerObjectData.ReflectionProbes,
+                };
+                var rendererList = context.renderContext.CreateRendererList(rendererDesc_base_Opaque);
+
+                context.renderContext.SetupCameraProperties(camera);
+                CoreUtils.SetRenderTarget(context.cmd, passData.output, passData.depth);
+
+                context.cmd.EnableShaderKeyword("UNITY_HDR_ON");
+
+                context.cmd.SetViewProjectionMatrices(camera.worldToCameraMatrix, camera.projectionMatrix);
+
+                //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.BeforeForwardAlpha);
+                CoreUtils.DrawRendererList(context.renderContext, context.cmd, rendererList);
+                //ExecuteCommandBuffersForEvent(context.renderContext, camera, CameraEvent.AfterForwardAlpha);
+                s_KrpForwardOpaqueMarker.End();
+            });
+
+            return passData;
+        }
+
         private ForwardTransparent CreateForwardTransparentPass(RenderGraph graph, KrpCameraData cameraData, TextureHandle src, TextureHandle depth)
         {
             using var builder = graph.AddRenderPass<ForwardTransparent>("KRP Forward Transparent", out var passData);
@@ -443,13 +494,13 @@ namespace TurboMode.Rendering
                 var camera = data.cameraData.camera;
 
                 // culling
-                RendererListDesc rendererDesc_base_Opaque = new(transparentPassTags, cameraData.cullingResults, cameraData.camera)
+                RendererListDesc rendererDesc_base_Transparent = new(transparentPassTags, cameraData.cullingResults, cameraData.camera)
                 {
                     sortingCriteria = SortingCriteria.CommonTransparent,
                     renderQueueRange = RenderQueueRange.transparent,
                     rendererConfiguration = (PerObjectData)0xfff, // PerObjectData.ReflectionProbes,
                 };
-                var rendererList = context.renderContext.CreateRendererList(rendererDesc_base_Opaque);
+                var rendererList = context.renderContext.CreateRendererList(rendererDesc_base_Transparent);
 
                 context.renderContext.SetupCameraProperties(camera);
                 CoreUtils.SetRenderTarget(context.cmd, passData.output, passData.depth);

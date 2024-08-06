@@ -1,12 +1,12 @@
 using KSP.Game;
 using KSP.Sim.impl;
 using System;
-using System.Collections;
-using System.Collections.Generic;
 using TurboMode.Sim;
 using Unity.Entities;
 using Unity.Profiling;
 using UnityEngine;
+using UnityEngine.LowLevel;
+using UnityEngine.PlayerLoop;
 
 namespace TurboMode
 {
@@ -25,7 +25,7 @@ namespace TurboMode
             universeModel.onVesselAdded += OnVesselAdded;
             gameInstance.RegisterFixedUpdate(this);
 
-            world = new World("Ksp2TurboMode");
+            world = new World("Ksp2TurboMode", WorldFlags.None);
             Debug.Log("TM: Entity world created");
             var modelRefEnt = world.EntityManager.CreateSingleton<UniverseRef>("UniverseModelRef");
             var modelRefData = new UniverseRef()
@@ -34,7 +34,6 @@ namespace TurboMode
             };
             world.EntityManager.SetComponentData(modelRefEnt, modelRefData);
             InitSystems();
-            InitFromExistingUniverse(modelRefData);
 
             // prevent crash on quit
             Application.quitting += Dispose;
@@ -100,7 +99,44 @@ namespace TurboMode
 
         private void InitSystems()
         {
-            world.CreateSystemManaged<RefreshFromUniverse>();
+            var simUpdateGroup = world.GetOrCreateSystemManaged<SimUpdateGroup>();
+
+            var refreshFromUniverse = world.CreateSystemManaged<RefreshFromUniverse>();
+            simUpdateGroup.AddSystemToUpdateList(refreshFromUniverse);
+
+            var playerLoop = PlayerLoop.GetCurrentPlayerLoop();
+            ScriptBehaviourUpdateOrder.AppendSystemToPlayerLoop(simUpdateGroup, ref playerLoop, typeof(FixedUpdate));
+            PlayerLoop.SetPlayerLoop(playerLoop);
+
+            ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop(world);
+        }
+
+        public Entity AddSimObj(SimulationObjectModel obj)
+        {
+            var em = world.EntityManager;
+            Entity entity = em.CreateEntity(typeof(SimObject));
+            em.SetComponentData(entity, new SimObject(obj));
+
+            foreach (var component in obj.Components)
+            {
+                AddComponent(entity, component);
+            }
+
+            return entity;
+        }
+
+        public void AddComponent(Entity entity, ObjectComponent component)
+        {
+            var em = world.EntityManager;
+            switch (component)
+            {
+                case PartComponent part:
+                    em.AddComponent(entity, typeof(Part));
+                    em.SetComponentData(entity, new Part(part));
+                    break;
+                case VesselComponent:
+                    break;
+            }
         }
     }
 }

@@ -49,10 +49,6 @@ namespace TurboMode.Behaviors
                 gameInstance.Messages.Subscribe<GameLoadFinishedMessage>((message) =>
                 {
                     Debug.Log($"TM: Game load finished");
-                    if (TurboModePlugin.enableEcsSim)
-                    {
-                        new UniverseSim(GameManager.Instance.Game);
-                    }
                 });
 
                 messageCenter = gameInstance.Messages;
@@ -72,9 +68,18 @@ namespace TurboMode.Behaviors
 
             if (initialized && gameInstance.SpaceSimulation != spaceSim && gameInstance.SpaceSimulation is not null)
             {
-                spaceSimMonitor = new SpaceSimulationMonitor(gameInstance.SpaceSimulation);
-                spaceSim = gameInstance.SpaceSimulation;
+                if (TurboModePlugin.enableEcsSim)
+                {
+                    var universeSim = new UniverseSim(GameManager.Instance.Game);
+                    spaceSimMonitor = new SpaceSimulationMonitor(gameInstance.SpaceSimulation, universeSim);
+                    spaceSim = gameInstance.SpaceSimulation;
+                }
             }
+        }
+
+        private void OnDestroy()
+        {
+            Debug.Log("TM: Bootstrap destroyed!");
         }
     }
 }

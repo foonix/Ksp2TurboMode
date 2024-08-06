@@ -32,6 +32,11 @@ namespace TurboMode.Sim
         {
             dryMass = obj.Part.DryMass;
         }
+
+        public Part(PartComponent part)
+        {
+            dryMass = part.DryMass;
+        }
     }
 
     public struct SimObject : IComponentData

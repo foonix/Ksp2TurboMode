@@ -1,4 +1,5 @@
 using KSP.Sim.impl;
+using System.Collections.Generic;
 using Unity.Entities;
 using UnityEngine;
 
@@ -56,11 +57,39 @@ namespace TurboMode.Sim
                 {
                     Debug.Log($"TM: UniversModel: Sim object {trackedObject} new component {type} {simObj} ({Time.frameCount})");
                     universeSim.AddComponent(entity, component);
+
+                    if (component is PartOwnerComponent ownerComponent)
+                    {
+                        simObj.PartOwner.PartsAdded += (added) =>
+                        {
+                            Debug.Log($"TM: UniversModel: Sim object {trackedObject} part added to owner {added.Count} ({Time.frameCount})");
+                            BulkChangeOwner(added);
+                        };
+                        simObj.PartOwner.PartsRemoved += (removed) =>
+                        {
+                            Debug.Log($"TM: UniversModel: Sim object {trackedObject} part removed from owner {removed.Count} ({Time.frameCount})");
+                            BulkChangeOwner(removed);
+                        };
+                    }
                 };
                 simObj.onComponentRemoved += (type, component) =>
                 {
                     Debug.Log($"TM: UniversModel: Sim object {trackedObject} removed component {type} {simObj} ({Time.frameCount})");
                 };
+
+                simObj.onViewLoad += (vo) =>
+                {
+                    // This doesn't seem to actually work, at least not when loading a saved game into flight.
+                    Debug.Log($"TM: UniversModel: Sim object {trackedObject} view loaded {vo} ({Time.frameCount})");
+                };
+            }
+
+            private void BulkChangeOwner(List<PartComponent> partComponents)
+            {
+                foreach (var part in partComponents)
+                {
+                    universeSim.ChangeOwner(part.GlobalId, entity);
+                }
             }
         }
     }

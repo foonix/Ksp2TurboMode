@@ -1,27 +1,13 @@
-using AwesomeTechnologies.Shaders;
-using KSP.Sim;
 using KSP.Sim.impl;
-using System;
-using System.Collections;
 using System.Collections.Generic;
-using Unity.Collections;
 using Unity.Entities;
-using UnityEngine;
 
 namespace TurboMode.Sim
 {
 
-    public struct Vessel : ISharedComponentData, IEquatable<Vessel>
+    public struct Vessel : IComponentData
     {
-        public IGGuid guid;
-
-        public Vessel(SimulationObjectModel obj)
-        {
-            guid = obj.Part.PartOwner.SimulationObject.Vessel.GlobalId;
-        }
-
-        public readonly bool Equals(Vessel other) => guid == other.guid;
-        public override int GetHashCode() => guid.GetHashCode();
+        public Vector3d gravityAtCurrentLocation;
     }
 
     public struct Part : IComponentData
@@ -42,6 +28,7 @@ namespace TurboMode.Sim
     public struct SimObject : IComponentData
     {
         public IGGuid guid;
+        public Entity owner;
         public double utCreationTime;
         //public Position position;
         //public Rotation rotation;
@@ -51,6 +38,7 @@ namespace TurboMode.Sim
         {
             guid = obj.GlobalId;
             utCreationTime = obj.UTCreationTime;
+            owner = default;
         }
     }
 
@@ -68,5 +56,10 @@ namespace TurboMode.Sim
     {
         public UniverseModel universeModel;
         public readonly Dictionary<IGGuid, Entity> simGuidToEntity = new();
+    }
+
+    public struct RigidbodyComponent : IComponentData
+    {
+        public Vector3d accelerations;
     }
 }

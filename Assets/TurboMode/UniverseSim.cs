@@ -1,6 +1,7 @@
 using KSP.Game;
 using KSP.Sim.impl;
 using System;
+using System.Collections.Generic;
 using TurboMode.Sim;
 using Unity.Entities;
 using Unity.Profiling;
@@ -10,13 +11,18 @@ using UnityEngine.PlayerLoop;
 
 namespace TurboMode
 {
-    public class UniverseSim : IFixedUpdate, IDisposable
+    public class UniverseSim : IPriorityOverride, IFixedUpdate, IDisposable
     {
+        public int ExecutionPriorityOverride => 3;
+
         readonly UniverseModel universeModel;
         readonly World world;
+        readonly EntityManager em; // just for shorthand
         readonly GameInstance gameInstance;
 
         static readonly ProfilerMarker UniverseSim_OnFixedUpdate = new("UniverseSim.OnFixedUpdate");
+
+        readonly Dictionary<IGGuid, Entity> simToEnt = new();
 
         public UniverseSim(GameInstance gameInstance)
         {
@@ -26,6 +32,7 @@ namespace TurboMode
             gameInstance.RegisterFixedUpdate(this);
 
             world = new World("Ksp2TurboMode", WorldFlags.None);
+            em = world.EntityManager;
             Debug.Log("TM: Entity world created");
             var modelRefEnt = world.EntityManager.CreateSingleton<UniverseRef>("UniverseModelRef");
             var modelRefData = new UniverseRef()
@@ -51,28 +58,6 @@ namespace TurboMode
 
         ~UniverseSim() => Dispose();
 
-        private void InitFromExistingUniverse(UniverseRef universeRef)
-        {
-            var em = world.EntityManager;
-            foreach (SimulationObjectModel obj in universeModel.GetAllSimObjects())
-            {
-                Entity entity;
-                if (obj.IsPart)
-                {
-                    entity = em.CreateEntity(typeof(Vessel), typeof(SimObject), typeof(Part));
-                    em.SetSharedComponent(entity, new Vessel(obj));
-                    em.SetComponentData(entity, new SimObject(obj));
-                    em.SetComponentData(entity, new Part(obj));
-                }
-                else
-                {
-                    entity = em.CreateEntity(typeof(SimObject));
-                    em.SetComponentData(entity, new SimObject(obj));
-                }
-                universeRef.simGuidToEntity[obj.GlobalId] = entity;
-            }
-        }
-
         private void OnVesselAdded(VesselComponent component)
         {
             Debug.Log($"TM: Vessel added {component.Name} {component.DisplayName}");
@@ -94,7 +79,8 @@ namespace TurboMode
 
         private void OnFixedUpdateImpl(float deltaTime)
         {
-            world.Update();
+            var rigidbodySystem = world.GetExistingSystemManaged<Sim.RigidbodySystem>();
+            rigidbodySystem.Update();
         }
 
         private void InitSystems()
@@ -103,6 +89,8 @@ namespace TurboMode
 
             var refreshFromUniverse = world.CreateSystemManaged<RefreshFromUniverse>();
             simUpdateGroup.AddSystemToUpdateList(refreshFromUniverse);
+
+            world.CreateSystemManaged<Sim.RigidbodySystem>();
 
             var playerLoop = PlayerLoop.GetCurrentPlayerLoop();
             ScriptBehaviourUpdateOrder.AppendSystemToPlayerLoop(simUpdateGroup, ref playerLoop, typeof(FixedUpdate));
@@ -113,9 +101,9 @@ namespace TurboMode
 
         public Entity AddSimObj(SimulationObjectModel obj)
         {
-            var em = world.EntityManager;
             Entity entity = em.CreateEntity(typeof(SimObject));
             em.SetComponentData(entity, new SimObject(obj));
+            simToEnt[obj.GlobalId] = entity;
 
             foreach (var component in obj.Components)
             {
@@ -127,16 +115,28 @@ namespace TurboMode
 
         public void AddComponent(Entity entity, ObjectComponent component)
         {
-            var em = world.EntityManager;
             switch (component)
             {
                 case PartComponent part:
-                    em.AddComponent(entity, typeof(Part));
-                    em.SetComponentData(entity, new Part(part));
+                    em.AddComponent<Part>(entity);
+                    em.SetComponentData<Part>(entity, new(part));
                     break;
-                case VesselComponent:
+                case VesselComponent vessel:
+                    em.AddComponent<Vessel>(entity);
+                    break;
+                case KSP.Sim.impl.RigidbodyComponent rbc:
+                    em.AddComponent<Sim.RigidbodyComponent>(entity);
+                    em.SetComponentData<Sim.RigidbodyComponent>(entity, new());
                     break;
             }
+        }
+
+        public void ChangeOwner(IGGuid simObj, Entity to)
+        {
+            var entity = simToEnt[simObj];
+            var simObjData = em.GetComponentData<SimObject>(entity);
+            simObjData.owner = to;
+            em.SetComponentData(entity, simObjData);
         }
     }
 }

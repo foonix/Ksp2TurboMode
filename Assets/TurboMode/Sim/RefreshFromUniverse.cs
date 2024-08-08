@@ -1,3 +1,4 @@
+using KSP.Game;
 using KSP.Sim;
 using Unity.Entities;
 
@@ -11,8 +12,15 @@ namespace TurboMode.Sim
         {
             var universeSim = SystemAPI.ManagedAPI.GetSingleton<UniverseRef>();
 
+            var game = GameManager.Instance.Game;
+
+            if (!game.IsSimulationRunning())
+            {
+                return;
+            }
+
             Entities
-                .WithName("UpdateSimObj")
+                .WithName("UpdatePartData")
                 .ForEach(
                 (in SimObject simObj) =>
                 {

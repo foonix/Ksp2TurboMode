@@ -49,7 +49,7 @@ namespace TurboMode.Patches
         public static void SetPopUpUIVisibility(Action<PopUpUIManagerBase, bool> orig, PopUpUIManagerBase window, bool isVisible)
         {
 #if TURBOMODE_TRACE_EVENTS
-            Debug.Log($"TM: Setting window {window.gameObject.name} active {isVisible}");
+            Debug.Log($"TM: Setting window {window?.gameObject.name} active {isVisible}");
 #endif
             if (isVisible)
             {

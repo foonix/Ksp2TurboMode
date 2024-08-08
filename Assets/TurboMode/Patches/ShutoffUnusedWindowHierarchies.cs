@@ -32,6 +32,16 @@ namespace TurboMode.Patches
                 (Action<Action<CheatsMenu, bool>, CheatsMenu, bool>)SetActiveOnVisibilityChangeCheats
             ),
 
+            new Hook(
+                typeof(SaveLoadDialog).GetMethod("SetVisiblity"),
+                (Action<Action<SaveLoadDialog, bool>, SaveLoadDialog, bool>)SetActiveOnVisibilitySaveLoad
+            ),
+
+            new Hook(
+                typeof(SaveLoadDialog).GetMethod("OnHideAnimationComplete"),
+                (Action<Action<SaveLoadDialog>, SaveLoadDialog>)SetActiveOnVisibilitySaveLoadAfterTween
+            ),
+
             // KSPUtil.SetVisible() extension is used by several windows
             new Hook(
                 typeof(KSPUtil).GetMethod("SetVisible"),
@@ -49,7 +59,7 @@ namespace TurboMode.Patches
         public static void SetPopUpUIVisibility(Action<PopUpUIManagerBase, bool> orig, PopUpUIManagerBase window, bool isVisible)
         {
 #if TURBOMODE_TRACE_EVENTS
-            Debug.Log($"TM: Setting window {window?.gameObject.name} active {isVisible}");
+            Debug.Log($"TM: Setting window {(window ? "<null>" : window.gameObject.name)} active {isVisible}");
 #endif
             if (isVisible)
             {
@@ -78,6 +88,32 @@ namespace TurboMode.Patches
             {
                 window.gameObject.SetActive(false);
             }
+        }
+
+        public static void SetActiveOnVisibilitySaveLoad(Action<SaveLoadDialog, bool> orig, SaveLoadDialog window, bool isVisible)
+        {
+#if TURBOMODE_TRACE_EVENTS
+            Debug.Log($"TM: Save/Load window {window.gameObject.name} active {isVisible}");
+#endif
+            if (isVisible)
+            {
+                window.gameObject.SetActive(true);
+            }
+            orig(window, isVisible);
+            if (!isVisible)
+            {
+                window.gameObject.SetActive(false);
+            }
+        }
+
+        public static void SetActiveOnVisibilitySaveLoadAfterTween(Action<SaveLoadDialog> orig, SaveLoadDialog window)
+        {
+#if TURBOMODE_TRACE_EVENTS
+            Debug.Log($"TM: Save/Load window {window.gameObject.name} inactive after tween");
+#endif
+
+            orig(window);
+            window.gameObject.SetActive(false);
         }
 
         public static void SetActiveOnVisibilityKSPUtil(

@@ -102,6 +102,7 @@ namespace TurboMode.Sim
                 updateToSimObject.Invoke(rbb, null);
             s_RbbFixedUpdate.End();
 
+            Physics.autoSyncTransforms = false;
             if (Math.Abs(rbb.mass - model.mass) > PhysicsSettings.PHYSX_MASS_TOLERANCE)
             {
                 rbb.mass = model.mass;
@@ -113,9 +114,8 @@ namespace TurboMode.Sim
                 activeRigidBody.AddForce(gravity, ForceMode.Acceleration);
             }
 
-            for (int i = 0; i < model.Forces.Count; i++)
+            foreach(var force in model.Forces)
             {
-                IForce force = model.Forces[i];
                 if (force.RelativeForce.sqrMagnitude > PhysicsSettings.PHYSX_RB_SQR_MAG_THRESHOLD)
                 {
                     Vector3 force2 = localToWorldMatrix.MultiplyVector(force.RelativeForce);
@@ -123,29 +123,26 @@ namespace TurboMode.Sim
                     activeRigidBody.AddForceAtPosition(force2, position, (force.ForceMode == ForceType.Acceleration) ? ForceMode.Acceleration : ForceMode.Force);
                 }
             }
-            for (int j = 0; j < model.SingleFrameForces.Count; j++)
+            foreach (var force in model.SingleFrameForces)
             {
-                IForce force3 = model.SingleFrameForces[j];
-                if (force3.RelativeForce.sqrMagnitude > PhysicsSettings.PHYSX_RB_SQR_MAG_THRESHOLD)
+                if (force.RelativeForce.sqrMagnitude > PhysicsSettings.PHYSX_RB_SQR_MAG_THRESHOLD)
                 {
-                    Vector3 force4 = localToWorldMatrix.MultiplyVector(force3.RelativeForce);
-                    Vector3 position2 = localToWorldMatrix.MultiplyPoint(force3.RelativePosition);
-                    activeRigidBody.AddForceAtPosition(force4, position2, (force3.ForceMode == ForceType.Acceleration) ? ForceMode.Acceleration : ForceMode.Force);
+                    Vector3 force4 = localToWorldMatrix.MultiplyVector(force.RelativeForce);
+                    Vector3 position2 = localToWorldMatrix.MultiplyPoint(force.RelativePosition);
+                    activeRigidBody.AddForceAtPosition(force4, position2, (force.ForceMode == ForceType.Acceleration) ? ForceMode.Acceleration : ForceMode.Force);
                 }
             }
             model.ClearSingleFrameForces();
-            for (int k = 0; k < model.Torques.Count; k++)
+            foreach (var torque in model.Torques)
             {
-                ITorque torque = model.Torques[k];
                 Vector3d vector3d2 = localToWorldMatrix.MultiplyVector(torque.RelativeTorque);
                 if (vector3d2.sqrMagnitude > PhysicsSettings.PHYSX_RB_SQR_MAG_THRESHOLD)
                 {
                     activeRigidBody.AddTorque(vector3d2, (torque.TorqueMode == ForceType.Acceleration) ? ForceMode.Acceleration : ForceMode.Force);
                 }
             }
-            for (int l = 0; l < model.PendingImpulses.Count; l++)
+            foreach (var impulse in model.PendingImpulses)
             {
-                var impulse = model.PendingImpulses[l];
                 Vector3 vector = localToWorldMatrix.MultiplyVector(impulse.RelativeImpulse);
                 if ((double)vector.sqrMagnitude > PhysicsSettings.PHYSX_RB_SQR_MAG_THRESHOLD)
                 {
@@ -220,10 +217,12 @@ namespace TurboMode.Sim
                 }
             }
 
-            if (!rbb.IsPhysXActive)
-            {
-                return;
-            }
+            Physics.autoSyncTransforms = true;
+
+            //if (!rbb.IsPhysXActive)
+            //{
+            //    return;
+            //}
 
             // Seems to be enabled, but not sure if it's necessary.
             /*

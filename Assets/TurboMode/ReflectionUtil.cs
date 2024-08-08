@@ -68,7 +68,7 @@ namespace TurboMode
                 Get = Expression.Lambda<Func<TClass, TDelegate?>>(body, thisArg).Compile();
             }
 
-            // Can be used to invoke the vent without garbage.
+            // Can be used to invoke the event without garbage.
             // thisHelper.Get(srcObj).Invoke(args)
             public Func<TClass, TDelegate?> Get { get; }
 

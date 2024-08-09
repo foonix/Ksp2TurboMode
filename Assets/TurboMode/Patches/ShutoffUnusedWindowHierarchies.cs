@@ -58,17 +58,18 @@ namespace TurboMode.Patches
 
         public static void SetPopUpUIVisibility(Action<PopUpUIManagerBase, bool> orig, PopUpUIManagerBase window, bool isVisible)
         {
+            bool windowIsAlive = window;
 #if TURBOMODE_TRACE_EVENTS
-            Debug.Log($"TM: Setting window {(window ? "<null>" : window.gameObject.name)} active {isVisible}");
+            Debug.Log($"TM: Setting window {(windowIsAlive ? window.gameObject.name : "<null>")} active {isVisible}");
 #endif
-            if (isVisible)
+            if (isVisible && windowIsAlive)
             {
                 window.gameObject.SetActive(true);
             }
             orig(window, isVisible);
-            if (!isVisible)
+            if (!isVisible && windowIsAlive)
             {
-                window.gameObject.SetActive(false);
+                WaitForFrames(window.gameObject, 1, isVisible);
             }
         }
 
@@ -102,7 +103,7 @@ namespace TurboMode.Patches
             orig(window, isVisible);
             if (!isVisible)
             {
-                window.gameObject.SetActive(false);
+                WaitForFrames(window.gameObject, 1, isVisible);
             }
         }
 
@@ -139,7 +140,7 @@ namespace TurboMode.Patches
             orig(window, isVisible);
             if (!isVisible && !isBlacklisted)
             {
-                window.gameObject.SetActive(isVisible);
+                WaitForFrames(window.gameObject, 1, isVisible);
             }
         }
 
@@ -158,18 +159,33 @@ namespace TurboMode.Patches
             orig(uiManager, isVisible);
             if (!isVisible && uiManager.EscapeMenu.isActiveAndEnabled)
             {
-                uiManager.EscapeMenu.StartCoroutine(WaitForUiInit(uiManager, uiManager.EscapeMenu.gameObject, isVisible));
+                WaitForFrames(uiManager.EscapeMenu.gameObject, 1, isVisible);
             }
         }
 
-        private static IEnumerator WaitForUiInit(UIManager ui, GameObject target, bool setActive)
+        private static void WaitForFrames(GameObject target, int frames, bool enable)
         {
-            // wait for children to finish initilizing, or else it will throw errors first time we turn it on.
-            while (!ui.Initialized)
+            GameManager.Instance.StartCoroutine(WaitForFramesCoroutine(target, frames, enable));
+        }
+
+        private static IEnumerator WaitForFramesCoroutine(GameObject target, int frames, bool enable)
+        {
+            while (frames > 0)
             {
                 yield return null;
+                frames--;
             }
-            target.SetActive(setActive);
+
+            var canvasGroup = target.GetComponent<CanvasGroup>();
+            if (canvasGroup)
+            {
+                // they may have turned it off band back on again in the same frame
+                var stillActive = canvasGroup.alpha > 0f;
+
+                target.SetActive(stillActive);
+                yield break;
+            }
+            target.SetActive(enable);
         }
     }
 }

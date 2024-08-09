@@ -162,9 +162,8 @@ namespace TurboMode
         public static void LogMissedCall(Action<CollisionManager> orig, CollisionManager cm)
         {
 #if TURBOMODE_TRACE_EVENTS
-            Debug.LogError($"Process called to OnCollisionIgnoreUpdate for {cm.name}");
+            //Debug.LogError($"Process called to OnCollisionIgnoreUpdate for {cm.name}");
 #endif
-            if (!TurboModePlugin.testModeEnabled) { return; }
 
             // the goal here is to obviate this, but leaving it on to check
             // if my code is not processing colliders it should be.
@@ -173,13 +172,25 @@ namespace TurboMode
 
         public static void MissingColliderCheck(Action<CollisionManager> orig, CollisionManager cm)
         {
+            // Plug the leaks to make the mode more usable, until I can figure out everything that
+            // spontaneously sprouts and destroys colliders. It's still decently fast compared to CollisionManager.
+            if (cm.Vessel.SimObjectComponent.SimulationObject.TryFindComponent(out VesselSelfCollide vsc) && !TurboModePlugin.testModeEnabled)
+            {
+                vsc.FindNewColliders();
+            }
+
+            if (!TurboModePlugin.testModeEnabled)
+            {
+                return;
+            }
+
             // let CollisionManager do its thing
             orig(cm);
 
             var field = typeof(CollisionManager).GetField("_vesselPartsList", BindingFlags.Instance | BindingFlags.NonPublic);
             IEnumerable partsLists = field.GetValue(cm) as IEnumerable;
 
-            if (!cm.Vessel.SimObjectComponent.SimulationObject.TryFindComponent(out VesselSelfCollide vsc))
+            if (vsc is null)
             {
                 Debug.Log($"TM: Vessel {cm.Vessel} is missing VesselSelfCollide component!");
                 return;

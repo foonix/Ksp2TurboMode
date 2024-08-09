@@ -201,6 +201,7 @@ namespace TurboMode.Models
 
         // Gather new colliders when what was changed is unknown.
         // This can be O(n^2) if no colliders were known, so it's the last resort.
+        // Scan the entire part hierarchy for colliders
         public void FindNewColliders()
         {
             VesselSelfCollide_FindNewColliders.Begin();
@@ -209,32 +210,43 @@ namespace TurboMode.Models
 #endif
             foreach (var part in SimulationObject.PartOwner.Parts)
             {
-                var partBehavior = Game.SpaceSimulation.ModelViewMap.FromModel(part.SimulationObject).Part;
-                WaitForAdditionalColliders.WaitOn(this, partBehavior);
-                foreach (var addedCollider in partBehavior.Colliders)
+                var simObjView = Game.SpaceSimulation.ModelViewMap.FromModel(part.SimulationObject);
+                if (!simObjView || !simObjView.Part)
                 {
-                    if (colliders.Contains(addedCollider))
+                    continue;
+                }
+                var partBehavior = simObjView.Part;
+                WaitForAdditionalColliders.WaitOn(this, partBehavior);
+                foreach (var foundCollider in partBehavior.GetComponentsInChildren<Collider>(true))
+                {
+                    if (colliders.Contains(foundCollider))
                     {
                         continue;
                     }
 
-                    _tempColliderStorage.Add(addedCollider);
                     foreach (var existingCollider in colliders)
                     {
+                        // check for destroyed colliders
+                        if (!existingCollider)
+                        {
+                            _tempColliderStorage.Add(existingCollider);
+                            continue;
+                        }
                         if (!TurboModePlugin.testModeEnabled)
                         {
-                            Physics.IgnoreCollision(addedCollider, existingCollider, ignore: true);
+                            Physics.IgnoreCollision(foundCollider, existingCollider, ignore: true);
                         }
                     }
+                    colliders.Add(foundCollider);
                 }
             }
 
-            foreach (var addedCollider in _tempColliderStorage)
+            foreach (var destroyedCollider in _tempColliderStorage)
             {
-                colliders.Add(addedCollider);
+                colliders.Remove(destroyedCollider);
             }
 #if TURBOMODE_TRACE_EVENTS
-            Debug.Log($"TM: Added {_tempColliderStorage.Count} colliders to existing {existingColliderCount} for {vessel}");
+            Debug.Log($"TM: Added {colliders.Count - existingColliderCount} colliders to existing {existingColliderCount} for {vessel} in paranoid scan");
 #endif
             _tempColliderStorage.Clear();
             VesselSelfCollide_FindNewColliders.End();

@@ -176,6 +176,12 @@ namespace TurboMode.Patches
                 frames--;
             }
 
+            // Target may have been set disabled just before being destroyed
+            if (!target)
+            {
+                yield break;
+            }
+
             var canvasGroup = target.GetComponent<CanvasGroup>();
             if (canvasGroup)
             {

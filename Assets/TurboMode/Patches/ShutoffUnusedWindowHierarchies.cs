@@ -1,4 +1,5 @@
 using KSP.Game;
+using KSP.UI;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections;
@@ -35,6 +36,11 @@ namespace TurboMode.Patches
             new Hook(
                 typeof(SaveLoadDialog).GetMethod("SetVisiblity"),
                 (Action<Action<SaveLoadDialog, bool>, SaveLoadDialog, bool>)SetVisibility
+            ),
+
+            new Hook(
+                typeof(MissionControlMenuController).GetMethod("SetVisible"),
+                (Action<Action<MissionControlMenuController, bool>, MissionControlMenuController, bool>)SetVisibility
             ),
 
             new Hook(

@@ -1,4 +1,5 @@
 using KSP.Game;
+using KSP.UI;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections;
@@ -15,26 +16,31 @@ namespace TurboMode.Patches
             // PopUpUIManagerBase
             new Hook(
                 typeof(PopUpUIManagerBase).GetMethod("set_IsVisible"),
-                (Action<Action<PopUpUIManagerBase, bool>, PopUpUIManagerBase, bool>)SetPopUpUIVisibility
+                (Action<Action<PopUpUIManagerBase, bool>, PopUpUIManagerBase, bool>)SetVisibility
             ),
             new Hook(
                 typeof(DeltaVToolManagerUI).GetMethod("set_IsVisible"),
-                (Action<Action<PopUpUIManagerBase, bool>, PopUpUIManagerBase, bool>)SetPopUpUIVisibility
+                (Action<Action<PopUpUIManagerBase, bool>, PopUpUIManagerBase, bool>)SetVisibility
             ),
             new Hook(
                 typeof(MissionTracker).GetMethod("SetVisible"),
-                (Action<Action<PopUpUIManagerBase, bool>, PopUpUIManagerBase, bool>)SetPopUpUIVisibility
+                (Action<Action<PopUpUIManagerBase, bool>, PopUpUIManagerBase, bool>)SetVisibility
             ),
 
             // CheatsMenu
             new Hook(
                 typeof(CheatsMenu).GetMethod("ShowWindow", BindingFlags.Instance | BindingFlags.NonPublic),
-                (Action<Action<CheatsMenu, bool>, CheatsMenu, bool>)SetActiveOnVisibilityChangeCheats
+                (Action<Action<CheatsMenu, bool>, CheatsMenu, bool>)SetVisibility
             ),
 
             new Hook(
                 typeof(SaveLoadDialog).GetMethod("SetVisiblity"),
-                (Action<Action<SaveLoadDialog, bool>, SaveLoadDialog, bool>)SetActiveOnVisibilitySaveLoad
+                (Action<Action<SaveLoadDialog, bool>, SaveLoadDialog, bool>)SetVisibility
+            ),
+
+            new Hook(
+                typeof(MissionControlMenuController).GetMethod("SetVisible"),
+                (Action<Action<MissionControlMenuController, bool>, MissionControlMenuController, bool>)SetVisibility
             ),
 
             new Hook(
@@ -56,7 +62,7 @@ namespace TurboMode.Patches
             ),
         };
 
-        public static void SetPopUpUIVisibility(Action<PopUpUIManagerBase, bool> orig, PopUpUIManagerBase window, bool isVisible)
+        private static void SetVisibility<T>(Action<T, bool> orig, T window, bool isVisible) where T : Behaviour
         {
             bool windowIsAlive = window;
 #if TURBOMODE_TRACE_EVENTS
@@ -69,45 +75,11 @@ namespace TurboMode.Patches
             orig(window, isVisible);
             if (!isVisible && windowIsAlive)
             {
-                WaitForFrames(window.gameObject, 1, isVisible);
+                WaitForFrames(window, 1, isVisible);
             }
         }
 
-        // I can't easily DRY here because many of the windows don't have a common ancestor with a shared visbility control.
-        // CheatsMenu
-        public static void SetActiveOnVisibilityChangeCheats(Action<CheatsMenu, bool> orig, CheatsMenu window, bool isVisible)
-        {
-#if TURBOMODE_TRACE_EVENTS
-            Debug.Log($"TM: Cheats window {window.gameObject.name} active {isVisible}");
-#endif
-            if (isVisible)
-            {
-                window.gameObject.SetActive(true);
-            }
-            orig(window, isVisible);
-            if (!isVisible)
-            {
-                window.gameObject.SetActive(false);
-            }
-        }
-
-        public static void SetActiveOnVisibilitySaveLoad(Action<SaveLoadDialog, bool> orig, SaveLoadDialog window, bool isVisible)
-        {
-#if TURBOMODE_TRACE_EVENTS
-            Debug.Log($"TM: Save/Load window {window.gameObject.name} active {isVisible}");
-#endif
-            if (isVisible)
-            {
-                window.gameObject.SetActive(true);
-            }
-            orig(window, isVisible);
-            if (!isVisible)
-            {
-                WaitForFrames(window.gameObject, 1, isVisible);
-            }
-        }
-
-        public static void SetActiveOnVisibilitySaveLoadAfterTween(Action<SaveLoadDialog> orig, SaveLoadDialog window)
+        private static void SetActiveOnVisibilitySaveLoadAfterTween(Action<SaveLoadDialog> orig, SaveLoadDialog window)
         {
 #if TURBOMODE_TRACE_EVENTS
             Debug.Log($"TM: Save/Load window {window.gameObject.name} inactive after tween");
@@ -117,7 +89,7 @@ namespace TurboMode.Patches
             window.gameObject.SetActive(false);
         }
 
-        public static void SetActiveOnVisibilityKSPUtil(
+        private static void SetActiveOnVisibilityKSPUtil(
             Action<CanvasGroup, bool> orig,
             CanvasGroup window,
             bool isVisible)
@@ -140,7 +112,7 @@ namespace TurboMode.Patches
             orig(window, isVisible);
             if (!isVisible && !isBlacklisted)
             {
-                WaitForFrames(window.gameObject, 1, isVisible);
+                WaitForFrames(window, 1, isVisible);
             }
         }
 
@@ -159,17 +131,26 @@ namespace TurboMode.Patches
             orig(uiManager, isVisible);
             if (!isVisible && uiManager.EscapeMenu.isActiveAndEnabled)
             {
-                WaitForFrames(uiManager.EscapeMenu.gameObject, 1, isVisible);
+                WaitForFrames(uiManager.EscapeMenu, 1, isVisible);
             }
         }
 
-        private static void WaitForFrames(GameObject target, int frames, bool enable)
+        private static void WaitForFrames(Behaviour target, int frames, bool enable)
         {
             GameManager.Instance.StartCoroutine(WaitForFramesCoroutine(target, frames, enable));
         }
 
-        private static IEnumerator WaitForFramesCoroutine(GameObject target, int frames, bool enable)
+        private static IEnumerator WaitForFramesCoroutine(Behaviour target, int frames, bool enable)
         {
+            var canvasGroup = target.GetComponent<CanvasGroup>();
+            if (canvasGroup && !canvasGroup.enabled)
+            {
+                // The alpha change will have no effect.  We actually don't want to disable the object then.
+                // Fixes throttle percentage turning on/off, which appears to be a feature that was implemented
+                // and then later disabled by just disabling the canvas group.
+                yield break;
+            }
+
             while (frames > 0)
             {
                 yield return null;
@@ -182,16 +163,15 @@ namespace TurboMode.Patches
                 yield break;
             }
 
-            var canvasGroup = target.GetComponent<CanvasGroup>();
             if (canvasGroup)
             {
                 // they may have turned it off band back on again in the same frame
                 var stillActive = canvasGroup.alpha > 0f;
 
-                target.SetActive(stillActive);
+                target.gameObject.SetActive(stillActive);
                 yield break;
             }
-            target.SetActive(enable);
+            target.gameObject.SetActive(enable);
         }
     }
 }

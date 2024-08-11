@@ -3,7 +3,7 @@ using System;
 using System.Linq;
 using Unity.Entities;
 
-namespace TurboMode.Sim
+namespace TurboMode.Sim.Components
 {
     [InternalBufferCapacity(20)]
     public readonly struct ResourceTypeData : IBufferElementData

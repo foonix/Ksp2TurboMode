@@ -2,8 +2,9 @@ using KSP.Sim.impl;
 using System.Collections.Generic;
 using Unity.Entities;
 
-namespace TurboMode.Sim
+namespace TurboMode.Sim.Components
 {
+    // components too small to deserve their own file
 
     public struct Vessel : IComponentData
     {

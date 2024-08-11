@@ -4,11 +4,12 @@ using KSP.Sim.impl;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Reflection;
+using TurboMode.Sim.Components;
 using Unity.Entities;
 using Unity.Profiling;
 using UnityEngine;
 
-namespace TurboMode.Sim
+namespace TurboMode.Sim.Systems
 {
     /// <summary>
     /// Replaces RigidbodyBehavior.OnFixedUpdate
@@ -58,7 +59,7 @@ namespace TurboMode.Sim
             Entities
                 .WithName("UpdateRbForces")
                 .ForEach(
-                (ref RigidbodyComponent rbc, in SimObject simObj) =>
+                (ref Components.RigidbodyComponent rbc, in SimObject simObj) =>
                 {
                     var vessel = vesselLookup[simObj.owner];
                     rbc.accelerations = vessel.gravityAtCurrentLocation;

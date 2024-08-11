@@ -1,8 +1,9 @@
 using KSP.Game;
 using KSP.Sim;
+using TurboMode.Sim.Components;
 using Unity.Entities;
 
-namespace TurboMode.Sim
+namespace TurboMode.Sim.Systems
 {
     [DisableAutoCreation]
     [UpdateInGroup(typeof(FixedStepSimulationSystemGroup))]

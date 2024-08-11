@@ -1,7 +1,8 @@
 using KSP.Game;
+using TurboMode.Sim.Components;
 using Unity.Entities;
 
-namespace TurboMode.Sim
+namespace TurboMode.Sim.Systems
 {
     public partial class ResourceManagementSystem : SystemBase
     {

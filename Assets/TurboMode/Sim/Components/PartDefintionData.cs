@@ -5,7 +5,7 @@ using System.Collections.Generic;
 using Unity.Entities;
 using UnityEngine;
 
-namespace TurboMode.Sim
+namespace TurboMode.Sim.Components
 {
     /// <summary>
     /// Singleton that stores data in common for a given type of part that doesn't change for a particular part instance.

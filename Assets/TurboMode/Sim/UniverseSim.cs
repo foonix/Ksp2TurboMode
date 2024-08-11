@@ -2,14 +2,15 @@ using KSP.Game;
 using KSP.Sim.impl;
 using System;
 using System.Collections.Generic;
-using TurboMode.Sim;
+using TurboMode.Sim.Components;
+using TurboMode.Sim.Systems;
 using Unity.Entities;
 using Unity.Profiling;
 using UnityEngine;
 using UnityEngine.LowLevel;
 using UnityEngine.PlayerLoop;
 
-namespace TurboMode
+namespace TurboMode.Sim
 {
     public class UniverseSim : IPriorityOverride, IFixedUpdate, IDisposable
     {
@@ -129,8 +130,8 @@ namespace TurboMode
                     em.AddComponent<Vessel>(entity);
                     break;
                 case KSP.Sim.impl.RigidbodyComponent rbc:
-                    em.AddComponent<Sim.RigidbodyComponent>(entity);
-                    em.SetComponentData<Sim.RigidbodyComponent>(entity, new());
+                    em.AddComponent<Sim.Components.RigidbodyComponent>(entity);
+                    em.SetComponentData<Sim.Components.RigidbodyComponent>(entity, new());
                     break;
             }
         }

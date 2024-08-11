@@ -48,11 +48,6 @@ namespace TurboMode.Sim.Components
 
     }
 
-    public struct ResourceContainer : IComponentData
-    {
-        //public NativeList<Resource> resources;
-    }
-
     public class UniverseRef : IComponentData
     {
         public UniverseModel universeModel;

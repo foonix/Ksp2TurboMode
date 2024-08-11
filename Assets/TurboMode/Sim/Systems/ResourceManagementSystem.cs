@@ -20,6 +20,26 @@ namespace TurboMode.Sim.Systems
         {
             var partData = SystemAPI.GetSingletonBuffer<PartDefintionData>();
             var partDataMap = SystemAPI.ManagedAPI.GetSingleton<PartDefintionData.PartNameToDataIdMap>();
+            var universeSim = SystemAPI.ManagedAPI.GetSingleton<UniverseRef>();
+
+            // Update resource amounts, mplicitly skipping objects that don't contain them.
+            Entities
+                .WithName("ScrapeResourceAmounts")
+                .ForEach((ref DynamicBuffer<ContainedResource> resourceContainer, in SimObject simObject) =>
+                {
+                    var resourceHolder = universeSim.universeModel.FindSimObject(simObject.guid);
+                    var prc = resourceHolder.Part.PartResourceContainer;
+                    var count = prc.GetResourcesContainedCount();
+
+                    // TODO: Fix allocs from GetAllResourcesContainedData()
+                    resourceContainer.Clear();
+                    foreach (var containedResource in prc.GetAllResourcesContainedData())
+                    {
+                        resourceContainer.Add(new ContainedResource(containedResource));
+                    }
+                })
+                .WithoutBurst()
+                .Run();
         }
     }
 }

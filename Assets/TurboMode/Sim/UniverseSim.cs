@@ -115,6 +115,15 @@ namespace TurboMode.Sim
                 AddComponent(entity, component);
             }
 
+            if (obj.IsPart)
+            {
+                var count = obj.Part.PartResourceContainer.GetResourcesContainedCount();
+                if (count > 0)
+                {
+                    ContainedResource.CreateOn(em, entity, obj.Part.PartResourceContainer);
+                }
+            }
+
             return entity;
         }
 
@@ -130,8 +139,8 @@ namespace TurboMode.Sim
                     em.AddComponent<Vessel>(entity);
                     break;
                 case KSP.Sim.impl.RigidbodyComponent rbc:
-                    em.AddComponent<Sim.Components.RigidbodyComponent>(entity);
-                    em.SetComponentData<Sim.Components.RigidbodyComponent>(entity, new());
+                    em.AddComponent<Components.RigidbodyComponent>(entity);
+                    em.SetComponentData<Components.RigidbodyComponent>(entity, new());
                     break;
             }
         }

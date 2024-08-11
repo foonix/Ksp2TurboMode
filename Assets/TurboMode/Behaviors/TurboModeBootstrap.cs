@@ -14,6 +14,7 @@ namespace TurboMode.Behaviors
 
         SpaceSimulation spaceSim;
         SpaceSimulationMonitor spaceSimMonitor;
+        UniverseSim universeSim;
 
         bool initialized;
 
@@ -66,14 +67,17 @@ namespace TurboMode.Behaviors
                 }
             }
 
-            if (initialized && gameInstance.SpaceSimulation != spaceSim && gameInstance.SpaceSimulation is not null)
+            // Wait for UniverseSim dependencies during savegame game load.
+            // Dispose and re-init UniverseSim on subsequent game reloads.
+            if (TurboModePlugin.enableEcsSim && initialized
+                && gameInstance.SpaceSimulation != spaceSim && gameInstance.SpaceSimulation is not null
+                && GameManager.Instance.Game.Parts.IsDataLoaded)
             {
-                if (TurboModePlugin.enableEcsSim)
-                {
-                    var universeSim = new UniverseSim(GameManager.Instance.Game);
-                    spaceSimMonitor = new SpaceSimulationMonitor(gameInstance.SpaceSimulation, universeSim);
-                    spaceSim = gameInstance.SpaceSimulation;
-                }
+                universeSim?.Dispose();
+
+                spaceSim = gameInstance.SpaceSimulation;
+                universeSim = new UniverseSim(GameManager.Instance.Game);
+                spaceSimMonitor = new SpaceSimulationMonitor(spaceSim, universeSim);
             }
         }
 

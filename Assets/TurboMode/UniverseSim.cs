@@ -79,7 +79,9 @@ namespace TurboMode
 
         private void OnFixedUpdateImpl(float deltaTime)
         {
-            var rigidbodySystem = world.GetExistingSystemManaged<Sim.RigidbodySystem>();
+            var resourceSystem = world.GetExistingSystemManaged<ResourceManagementSystem>();
+            resourceSystem.Update();
+            var rigidbodySystem = world.GetExistingSystemManaged<RigidbodySystem>();
             rigidbodySystem.Update();
         }
 
@@ -90,8 +92,10 @@ namespace TurboMode
             var refreshFromUniverse = world.CreateSystemManaged<RefreshFromUniverse>();
             simUpdateGroup.AddSystemToUpdateList(refreshFromUniverse);
 
-            world.CreateSystemManaged<Sim.RigidbodySystem>();
+            world.CreateSystemManaged<RigidbodySystem>();
+            world.CreateSystemManaged<ResourceManagementSystem>();
 
+            // Not using default groups yet, but set them up anyway.  Maybe someone will want them?
             var playerLoop = PlayerLoop.GetCurrentPlayerLoop();
             ScriptBehaviourUpdateOrder.AppendSystemToPlayerLoop(simUpdateGroup, ref playerLoop, typeof(FixedUpdate));
             PlayerLoop.SetPlayerLoop(playerLoop);

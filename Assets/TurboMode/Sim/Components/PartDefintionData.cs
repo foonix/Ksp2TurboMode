@@ -3,7 +3,6 @@ using KSP.Sim.Definitions;
 using System;
 using System.Collections.Generic;
 using Unity.Entities;
-using UnityEngine;
 
 namespace TurboMode.Sim.Components
 {
@@ -61,7 +60,6 @@ namespace TurboMode.Sim.Components
 
             foreach (PartCore part in partsProvider.AllParts())
             {
-                Debug.Log(part.data.partName);
                 map.Add(part.data.partName, (ushort)buffer.Length);
                 buffer.Add(new PartDefintionData(part.data));
             }

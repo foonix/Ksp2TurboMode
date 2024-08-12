@@ -14,15 +14,12 @@ namespace TurboMode.Sim.Components
     public struct Part : IComponentData
     {
         public double dryMass;
-
-        public Part(SimulationObjectModel obj)
-        {
-            dryMass = obj.Part.DryMass;
-        }
+        public double effectiveMass;
 
         public Part(PartComponent part)
         {
             dryMass = part.DryMass;
+            effectiveMass = 0;
         }
     }
 
@@ -43,11 +40,6 @@ namespace TurboMode.Sim.Components
         }
     }
 
-    public struct Resource
-    {
-
-    }
-
     public class UniverseRef : IComponentData
     {
         public UniverseModel universeModel;
@@ -57,5 +49,18 @@ namespace TurboMode.Sim.Components
     public struct RigidbodyComponent : IComponentData
     {
         public Vector3d accelerations;
+    }
+
+    public struct KerbalStorage : IComponentData
+    {
+        public ushort count;
+    }
+
+    /// <summary>
+    /// Sum of mass adjustments from PartComponent.Modules.ValuesList[i].DataModules.Values where Value is IMassModifier
+    /// </summary>
+    public struct MassModifiers : IComponentData
+    {
+        public double mass;
     }
 }

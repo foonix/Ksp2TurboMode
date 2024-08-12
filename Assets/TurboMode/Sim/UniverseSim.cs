@@ -1,7 +1,9 @@
 using KSP.Game;
+using KSP.Sim;
 using KSP.Sim.impl;
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TurboMode.Sim.Components;
 using TurboMode.Sim.Systems;
 using Unity.Entities;
@@ -115,12 +117,31 @@ namespace TurboMode.Sim
                 AddComponent(entity, component);
             }
 
+            // Check for the presences anything that could potentially change the part mass every frame.
+            // I belive the part base mass is constant, but IMassModifier can have negative values on procedural parts.
+            // See: PartComponent.UpdateMass()
             if (obj.IsPart)
             {
+                var part = obj.Part;
+
                 var count = obj.Part.PartResourceContainer.GetResourcesContainedCount();
                 if (count > 0)
                 {
-                    ContainedResource.CreateOn(em, entity, obj.Part.PartResourceContainer);
+                    ContainedResource.CreateOn(em, entity, part.PartResourceContainer);
+                }
+
+                if (part.PartData.crewCapacity > 0)
+                {
+                    em.AddComponent<KerbalStorage>(entity);
+                }
+
+                bool hasMassModifier = part.Modules.Values
+                    .SelectMany(m => m.DataModules.Values)
+                    .Where(v => v is IMassModifier)
+                    .Any();
+                if (hasMassModifier)
+                {
+                    em.AddComponent<MassModifiers>(entity);
                 }
             }
 

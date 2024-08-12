@@ -16,7 +16,7 @@ namespace TurboMode.Sim.Components
             amount = crd.StoredUnits;
         }
 
-        public static void CreateOn(EntityManager em, Entity entity, KSP.Sim.ResourceSystem.ResourceContainer kspContainer)
+        public static void CreateOn(EntityManager em, Entity entity, ResourceContainer kspContainer)
         {
             var count = kspContainer.GetResourcesContainedCount();
             var buffer = em.AddBuffer<ContainedResource>(entity);

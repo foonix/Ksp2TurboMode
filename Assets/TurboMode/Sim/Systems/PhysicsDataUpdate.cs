@@ -12,6 +12,7 @@ namespace TurboMode.Sim.Systems
         ComponentTypeHandle<RigidbodyComponent> rigidbodyComponentHandle;
         ComponentTypeHandle<Part> partHandle;
         ComponentTypeHandle<KerbalStorage> kerbalStorageHandle;
+        ComponentTypeHandle<MassModifiers> massModifiersHandle;
         BufferTypeHandle<ContainedResource> containedResourceHandle;
 
         public void OnCreate(ref SystemState state)
@@ -24,6 +25,7 @@ namespace TurboMode.Sim.Systems
             partHandle = state.GetComponentTypeHandle<Part>(true);
             kerbalStorageHandle = state.GetComponentTypeHandle<KerbalStorage>(true);
             containedResourceHandle = state.GetBufferTypeHandle<ContainedResource>(true);
+            massModifiersHandle = state.GetComponentTypeHandle<MassModifiers>(true);
         }
         public readonly void OnDestroy(ref SystemState state) { }
 
@@ -43,6 +45,7 @@ namespace TurboMode.Sim.Systems
                 kerbalStorageHandle = kerbalStorageHandle,
                 containedResourceHandle = containedResourceHandle,
                 resourceTypeBuffer = resourceTypes,
+                massModifiersHandle = massModifiersHandle,
             }.Run(massUpdateQuery);
         }
 
@@ -53,6 +56,7 @@ namespace TurboMode.Sim.Systems
             public ComponentTypeHandle<Part> partHandle;
             public ComponentTypeHandle<KerbalStorage> kerbalStorageHandle;
             public BufferTypeHandle<ContainedResource> containedResourceHandle;
+            public ComponentTypeHandle<MassModifiers> massModifiersHandle;
 
             // singleton
             public DynamicBuffer<ResourceTypeData> resourceTypeBuffer;
@@ -99,6 +103,18 @@ namespace TurboMode.Sim.Systems
                             resourceMass += typeData.massPerUnit * storedResource.amount;
                         }
                         rbc.effectiveMass += resourceMass;
+                        rigidbodies[i] = rbc;
+                    }
+                }
+
+                if (chunk.Has<MassModifiers>())
+                {
+                    NativeArray<MassModifiers> modifiers = chunk.GetNativeArray(ref massModifiersHandle);
+                    var storageEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
+                    while (storageEnumerator.NextEntityIndex(out var i))
+                    {
+                        var rbc = rigidbodies[i];
+                        rbc.effectiveMass += modifiers[i].mass;
                         rigidbodies[i] = rbc;
                     }
                 }

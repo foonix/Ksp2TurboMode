@@ -76,12 +76,30 @@ namespace TurboMode.Sim.Systems
                 {
                     var rbc = rigidbodies[i];
                     rbc.effectiveMass = parts[i].dryMass;
-                    // really this clamp should be after modifiers.
-                    if(rbc.effectiveMass < MINIMUM_PART_MASS)
+                    // The clamp must be applied even if the base part mass is below minium. (see small solar panels)
+                    if (rbc.effectiveMass < MINIMUM_PART_MASS)
                     {
                         rbc.effectiveMass = MINIMUM_PART_MASS;
                     }
                     rigidbodies[i] = rbc;
+                }
+
+                if (chunk.Has<MassModifiers>())
+                {
+                    NativeArray<MassModifiers> modifiers = chunk.GetNativeArray(ref massModifiersHandle);
+                    var storageEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
+                    while (storageEnumerator.NextEntityIndex(out var i))
+                    {
+                        var rbc = rigidbodies[i];
+                        rbc.effectiveMass += modifiers[i].mass;
+                        // The original code applies the clamp just after the modifiers, which can be negative.
+                        // We may be double clamping here if a tiny part also has mass modifiers, but I'm not sure that happens.
+                        if (rbc.effectiveMass < MINIMUM_PART_MASS)
+                        {
+                            rbc.effectiveMass = MINIMUM_PART_MASS;
+                        }
+                        rigidbodies[i] = rbc;
+                    }
                 }
 
                 if (chunk.Has<KerbalStorage>())
@@ -112,18 +130,6 @@ namespace TurboMode.Sim.Systems
                             resourceMass += typeData.massPerUnit * storedResource.amount;
                         }
                         rbc.effectiveMass += resourceMass;
-                        rigidbodies[i] = rbc;
-                    }
-                }
-
-                if (chunk.Has<MassModifiers>())
-                {
-                    NativeArray<MassModifiers> modifiers = chunk.GetNativeArray(ref massModifiersHandle);
-                    var storageEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
-                    while (storageEnumerator.NextEntityIndex(out var i))
-                    {
-                        var rbc = rigidbodies[i];
-                        rbc.effectiveMass += modifiers[i].mass;
                         rigidbodies[i] = rbc;
                     }
                 }

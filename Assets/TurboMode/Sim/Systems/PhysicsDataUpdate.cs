@@ -44,7 +44,7 @@ namespace TurboMode.Sim.Systems
             var resourceTypes = SystemAPI.GetSingletonBuffer<ResourceTypeData>(true);
             var partDefinitions = SystemAPI.GetSingletonBuffer<PartDefintionData>(true);
 
-            new UpdateMassChunks()
+            var updateMassHandle = new UpdateMassChunks()
             {
                 rigidbodyComponentHandle = rigidbodyComponentHandle,
                 partHandle = partHandle,
@@ -53,7 +53,8 @@ namespace TurboMode.Sim.Systems
                 resourceTypeBuffer = resourceTypes,
                 massModifiersHandle = massModifiersHandle,
                 partDefinitions = partDefinitions,
-            }.Run(massUpdateQuery);
+            }.ScheduleParallel(massUpdateQuery, state.Dependency);
+            updateMassHandle.Complete();
         }
 
         /// <summary>

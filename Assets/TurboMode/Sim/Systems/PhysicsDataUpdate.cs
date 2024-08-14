@@ -27,7 +27,7 @@ namespace TurboMode.Sim.Systems
                 .WithAll<Part>()
                 .Build(ref state);
             rigidbodyComponentHandle = state.GetComponentTypeHandle<RigidbodyComponent>(false);
-            partHandle = state.GetComponentTypeHandle<Part>(true);
+            partHandle = state.GetComponentTypeHandle<Part>(false);
             kerbalStorageHandle = state.GetComponentTypeHandle<KerbalStorage>(true);
             containedResourceHandle = state.GetBufferTypeHandle<ContainedResource>(true);
             massModifiersHandle = state.GetComponentTypeHandle<MassModifiers>(true);
@@ -42,6 +42,7 @@ namespace TurboMode.Sim.Systems
             containedResourceHandle.Update(ref state);
 
             var resourceTypes = SystemAPI.GetSingletonBuffer<ResourceTypeData>(true);
+            var partDefinitions = SystemAPI.GetSingletonBuffer<PartDefintionData>(true);
 
             new UpdateMassChunks()
             {
@@ -51,9 +52,13 @@ namespace TurboMode.Sim.Systems
                 containedResourceHandle = containedResourceHandle,
                 resourceTypeBuffer = resourceTypes,
                 massModifiersHandle = massModifiersHandle,
+                partDefinitions = partDefinitions,
             }.Run(massUpdateQuery);
         }
 
+        /// <summary>
+        /// Update Part and Rigidbody data together.
+        /// </summary>
         private partial struct UpdateMassChunks : IJobChunk
         {
             // per entity
@@ -65,63 +70,59 @@ namespace TurboMode.Sim.Systems
 
             // singleton
             public DynamicBuffer<ResourceTypeData> resourceTypeBuffer;
+            public DynamicBuffer<PartDefintionData> partDefinitions;
 
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
             {
                 NativeArray<RigidbodyComponent> rigidbodies = chunk.GetNativeArray(ref rigidbodyComponentHandle);
                 NativeArray<Part> parts = chunk.GetNativeArray(ref partHandle);
+                NativeArray<MassModifiers> modifiers = chunk.GetNativeArray(ref massModifiersHandle);
+                NativeArray<KerbalStorage> kerbals = chunk.GetNativeArray(ref kerbalStorageHandle);
+                BufferAccessor<ContainedResource> storedResources = chunk.GetBufferAccessor(ref containedResourceHandle);
+
                 var partEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
+
+                bool hasMassModifiers = chunk.Has<MassModifiers>();
+                bool hasKerbalStorage = chunk.Has<KerbalStorage>();
+                bool hasContainedResources = chunk.Has<ContainedResource>();
 
                 while (partEnumerator.NextEntityIndex(out var i))
                 {
                     var rbc = rigidbodies[i];
-                    rbc.effectiveMass = parts[i].dryMass;
+                    var part = parts[i];
+
+                    // start from base mass value for the part.
+                    rbc.effectiveMass = partDefinitions[part.typeId].mass;
+
+                    if (hasMassModifiers)
+                    {
+                        rbc.effectiveMass += modifiers[i].mass;
+                    }
+
                     // The clamp must be applied even if the base part mass is below minium. (see small solar panels)
                     if (rbc.effectiveMass < MINIMUM_PART_MASS)
                     {
                         rbc.effectiveMass = MINIMUM_PART_MASS;
                     }
-                    rigidbodies[i] = rbc;
-                }
 
-                if (chunk.Has<MassModifiers>())
-                {
-                    NativeArray<MassModifiers> modifiers = chunk.GetNativeArray(ref massModifiersHandle);
-                    var storageEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
-                    while (storageEnumerator.NextEntityIndex(out var i))
+                    // It's a bit silly, but not every Rigidbody has a part, parts might not have a Rigidbody,
+                    // and both need mass data.
+                    part.dryMass = rbc.effectiveMass;
+
+                    if (hasKerbalStorage)
                     {
-                        var rbc = rigidbodies[i];
-                        rbc.effectiveMass += modifiers[i].mass;
-                        // The original code applies the clamp just after the modifiers, which can be negative.
-                        // We may be double clamping here if a tiny part also has mass modifiers, but I'm not sure that happens.
-                        if (rbc.effectiveMass < MINIMUM_PART_MASS)
-                        {
-                            rbc.effectiveMass = MINIMUM_PART_MASS;
-                        }
-                        rigidbodies[i] = rbc;
+                        var greenMass = kerbals[i].count * MASS_PER_KERBAL;
+                        part.greenMass = greenMass;
+                        rbc.effectiveMass += greenMass;
                     }
-                }
-
-                if (chunk.Has<KerbalStorage>())
-                {
-                    NativeArray<KerbalStorage> kerbals = chunk.GetNativeArray(ref kerbalStorageHandle);
-                    var storageEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
-                    while (storageEnumerator.NextEntityIndex(out var i))
+                    else
                     {
-                        var rbc = rigidbodies[i];
-                        rbc.effectiveMass += kerbals[i].count * MASS_PER_KERBAL;
-                        rigidbodies[i] = rbc;
+                        part.greenMass = 0;
                     }
-                }
 
-                if (chunk.Has<ContainedResource>())
-                {
-                    BufferAccessor<ContainedResource> storedResources = chunk.GetBufferAccessor(ref containedResourceHandle);
-                    for (int i = 0; i < storedResources.Length; i++)
+                    if (hasContainedResources)
                     {
-                        var rbc = rigidbodies[i];
                         var stored = storedResources[i];
-
                         double resourceMass = 0;
 
                         foreach (var storedResource in stored)
@@ -130,8 +131,14 @@ namespace TurboMode.Sim.Systems
                             resourceMass += typeData.massPerUnit * storedResource.amount;
                         }
                         rbc.effectiveMass += resourceMass;
-                        rigidbodies[i] = rbc;
+                        part.wetMass = resourceMass;
                     }
+                    else
+                    {
+                        part.wetMass = 0;
+                    }
+
+                    rigidbodies[i] = rbc;
                 }
             }
         }

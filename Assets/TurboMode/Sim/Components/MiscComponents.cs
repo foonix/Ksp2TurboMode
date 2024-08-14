@@ -13,11 +13,17 @@ namespace TurboMode.Sim.Components
 
     public struct Part : IComponentData
     {
+        readonly public ushort typeId;
         public double dryMass;
+        public double greenMass;
+        public double wetMass;
 
-        public Part(PartComponent part)
+        public Part(PartComponent part, ushort typeId)
         {
+            this.typeId = typeId;
             dryMass = part.DryMass;
+            greenMass = part.GreenMass;
+            wetMass = part.WetMass;
         }
     }
 

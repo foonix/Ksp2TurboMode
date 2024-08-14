@@ -46,7 +46,7 @@ namespace TurboMode.Sim.Components
             public readonly Dictionary<string, ushort> map = new(400);
         }
 
-        public static Entity BuildDbSingleton(EntityManager em)
+        public static (Entity, Entity) BuildDbSingleton(EntityManager em)
         {
             var rtddb = em.CreateSingletonBuffer<PartDefintionData>("PartTypeDataDb");
             var buffer = em.GetBuffer<PartDefintionData>(rtddb, false);
@@ -64,7 +64,7 @@ namespace TurboMode.Sim.Components
                 buffer.Add(new PartDefintionData(part.data));
             }
 
-            return rtddb;
+            return (rtddb, rtddbMap);
         }
     }
 }

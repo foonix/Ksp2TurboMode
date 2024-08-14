@@ -26,7 +26,6 @@ namespace TurboMode.Sim.Systems
             var rdd = GameManager.Instance.Game.ResourceDefinitionDatabase;
 
             resourceTypeDb = ResourceTypeData.BuildDbSingleton(rdd, EntityManager);
-            PartDefintionData.BuildDbSingleton(EntityManager);
         }
 
         protected override void OnUpdate()

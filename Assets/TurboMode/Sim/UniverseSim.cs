@@ -27,6 +27,9 @@ namespace TurboMode.Sim
 
         readonly Dictionary<IGGuid, Entity> simToEnt = new();
 
+        Entity partTypeSingleton;
+        Entity partTypeMapSingleton;
+
         public UniverseSim(GameInstance gameInstance)
         {
             this.gameInstance = gameInstance;
@@ -107,6 +110,8 @@ namespace TurboMode.Sim
             PlayerLoop.SetPlayerLoop(playerLoop);
 
             ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop(world);
+
+            (partTypeSingleton, partTypeMapSingleton) = PartDefintionData.BuildDbSingleton(em);
         }
 
         public Entity AddSimObj(SimulationObjectModel obj)
@@ -156,8 +161,10 @@ namespace TurboMode.Sim
             switch (component)
             {
                 case PartComponent part:
+                    var map = em.GetComponentData<PartDefintionData.PartNameToDataIdMap>(partTypeMapSingleton);
+                    var typeId = map.map[part.Name];
                     em.AddComponent<Part>(entity);
-                    em.SetComponentData<Part>(entity, new(part));
+                    em.SetComponentData<Part>(entity, new(part, typeId));
                     break;
                 case VesselComponent vessel:
                     em.AddComponent<Vessel>(entity);

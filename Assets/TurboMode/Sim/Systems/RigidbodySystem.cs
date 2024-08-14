@@ -24,10 +24,22 @@ namespace TurboMode.Sim.Systems
                 typeof(RigidbodyBehavior).GetMethod("OnFixedUpdate"),
                 (Action<Action<System.Object, float>, RigidbodyBehavior, float>)RbbFixedUpdateShunt
                 );
+        readonly Hook partComponentMassUpdateShutoff = new(
+            typeof(PartComponent).GetMethod("UpdateMass"),
+            (Action<Action<object>, object>)VoidShutoff
+            );
 
         public static void RbbFixedUpdateShunt(Action<object, float> orig, RigidbodyBehavior rbb, float deltaTime) { }
+        public static void VoidShutoff(Action<object> orig, object origObject) { }
 
         private static readonly ProfilerMarker s_RbbFixedUpdate = new("RigidbodySystem fixed update");
+
+        private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partMassField
+            = new(typeof(PartComponent).GetField("mass", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partGreenMassField
+            = new(typeof(PartComponent).GetField("greenMass", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partResourceMass
+            = new(typeof(PartComponent).GetField("resourceMass", BindingFlags.NonPublic | BindingFlags.Instance));
 
         protected override void OnUpdate()
         {
@@ -39,6 +51,19 @@ namespace TurboMode.Sim.Systems
                 return;
             }
             var vesselLookup = GetComponentLookup<Vessel>(true);
+
+            Entities
+                .WithName("WritePartMass")
+                .ForEach(
+                (ref Part part, in SimObject simObj) =>
+                {
+                    var partComponent = universeSim.universeModel.FindSimObject(simObj.guid).Part;
+                    partMassField.Set(partComponent, part.dryMass);
+                    partGreenMassField.Set(partComponent, part.greenMass);
+                    partResourceMass.Set(partComponent, part.wetMass);
+                })
+                .WithoutBurst()
+                .Run();
 
             Entities
                 .WithName("UpdateVesselGravity")
@@ -115,7 +140,7 @@ namespace TurboMode.Sim.Systems
                 activeRigidBody.AddForce(gravity, ForceMode.Acceleration);
             }
 
-            foreach(var force in model.Forces)
+            foreach (var force in model.Forces)
             {
                 if (force.RelativeForce.sqrMagnitude > PhysicsSettings.PHYSX_RB_SQR_MAG_THRESHOLD)
                 {

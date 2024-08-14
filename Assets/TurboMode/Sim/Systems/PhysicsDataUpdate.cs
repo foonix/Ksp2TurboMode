@@ -15,6 +15,11 @@ namespace TurboMode.Sim.Systems
         ComponentTypeHandle<MassModifiers> massModifiersHandle;
         BufferTypeHandle<ContainedResource> containedResourceHandle;
 
+        // Game.SessionManager.KerbalRosterManager.KerbalIVAMass
+        private const double MASS_PER_KERBAL = 0.095;
+        // PhysicsSettings.PHYSX_MINIMUM_PART_MASS
+        private const double MINIMUM_PART_MASS = 0.001;
+
         public void OnCreate(ref SystemState state)
         {
             massUpdateQuery = new EntityQueryBuilder(Allocator.Temp)
@@ -71,6 +76,11 @@ namespace TurboMode.Sim.Systems
                 {
                     var rbc = rigidbodies[i];
                     rbc.effectiveMass = parts[i].dryMass;
+                    // really this clamp should be after modifiers.
+                    if(rbc.effectiveMass < MINIMUM_PART_MASS)
+                    {
+                        rbc.effectiveMass = MINIMUM_PART_MASS;
+                    }
                     rigidbodies[i] = rbc;
                 }
 
@@ -81,8 +91,7 @@ namespace TurboMode.Sim.Systems
                     while (storageEnumerator.NextEntityIndex(out var i))
                     {
                         var rbc = rigidbodies[i];
-                        // TODO: actual kerbal mass
-                        rbc.effectiveMass += kerbals[i].count * 300f;
+                        rbc.effectiveMass += kerbals[i].count * MASS_PER_KERBAL;
                         rigidbodies[i] = rbc;
                     }
                 }

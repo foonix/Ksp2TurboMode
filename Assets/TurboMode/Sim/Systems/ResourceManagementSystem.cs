@@ -16,6 +16,11 @@ namespace TurboMode.Sim.Systems
         private static readonly ReflectionUtil.FieldHelper<KerbalRosterManager, Dictionary<IGGuid, List<KerbalInfo>>> _lookupSimObjectTableField
             = new(typeof(KerbalRosterManager).GetField("_lookupSimObjectTable", BindingFlags.NonPublic | BindingFlags.Instance));
 
+        private static readonly ReflectionUtil.FieldHelper<ResourceContainer, List<ResourceDefinitionID>> _resourceIDMapField
+            = new(typeof(ResourceContainer).GetField("_resourceIDMap", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<ResourceContainer, List<double>> _storedUnitsLookupField
+            = new(typeof(ResourceContainer).GetField("_storedUnitsLookup", BindingFlags.NonPublic | BindingFlags.Instance));
+
         protected override void OnCreate()
         {
             var rdd = GameManager.Instance.Game.ResourceDefinitionDatabase;
@@ -37,7 +42,6 @@ namespace TurboMode.Sim.Systems
                 {
                     var resourceHolder = universeSim.universeModel.FindSimObject(simObject.guid);
                     var prc = resourceHolder.Part.PartResourceContainer;
-                    var count = prc.GetResourcesContainedCount();
 
                     UpdateResources(ref resourceContainer, prc);
                 })
@@ -82,7 +86,7 @@ namespace TurboMode.Sim.Systems
                             }
                         }
                     }
-                    // TODO: clamp to minimum mass constant.
+                    // note: modifiers can be negative.  The minimum mass is clamped later.
                     massModifiers.mass = massFound;
                 })
                 .WithoutBurst()
@@ -91,11 +95,13 @@ namespace TurboMode.Sim.Systems
 
         private static void UpdateResources(ref DynamicBuffer<ContainedResource> resourceContainer, ResourceContainer prc)
         {
-            // TODO: Fix allocs from GetAllResourcesContainedData()
+            var typeIds = _resourceIDMapField.Get(prc);
+            var storedAmounts = _storedUnitsLookupField.Get(prc);
+
             resourceContainer.Clear();
-            foreach (var containedResource in prc.GetAllResourcesContainedData())
+            for (int i = 0; i < typeIds.Count; i++)
             {
-                resourceContainer.Add(new ContainedResource(containedResource));
+                resourceContainer.Add(new ContainedResource(typeIds[i].Value, storedAmounts[i]));
             }
         }
     }

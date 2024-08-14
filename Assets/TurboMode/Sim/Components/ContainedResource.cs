@@ -16,6 +16,12 @@ namespace TurboMode.Sim.Components
             amount = crd.StoredUnits;
         }
 
+        public ContainedResource(ushort type, double amount)
+        {
+            this.type = type;
+            this.amount = amount;
+        }
+
         public static void CreateOn(EntityManager em, Entity entity, ResourceContainer kspContainer)
         {
             var count = kspContainer.GetResourcesContainedCount();

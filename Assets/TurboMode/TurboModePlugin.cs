@@ -4,6 +4,7 @@ using BepInEx.Logging;
 using MonoMod.RuntimeDetour;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using Unity.Burst;
 using UnityEngine;
@@ -85,7 +86,7 @@ namespace TurboMode
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
-            Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));
+            var entitiesAssembly = Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));
 
             var burstLibFullpath = Path.GetFullPath(Path.Combine(cwd, burstCodeAssemblyName));
             if (!File.Exists(burstLibFullpath))
@@ -97,6 +98,28 @@ namespace TurboMode
             if (!burstLoaded)
             {
                 Logger.LogError($"BurstRuntime failed to load assembly at {burstLibFullpath}");
+            }
+
+            // ECS's roslyn generator puts some setup for ISystem classes into weird generated
+            // classes using using [RuntimeInitializeOnLoadMethod] to register the ISystem into ECS.
+            // BepInEx calls us after that's already happened.  So we have to scan
+            // our own assembly for anything ECS generated and invoke it explicitly,
+            // or else the ISystem can't be loaded into a World.
+            CallAfterAssembliesLoadedFor(Assembly.GetExecutingAssembly());
+        }
+
+        private static void CallAfterAssembliesLoadedFor(Assembly assembly)
+        {
+            var methods = assembly.GetTypes().Where(x => x.IsClass)
+                .SelectMany(x => x.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static));
+
+            foreach (var method in methods)
+            {
+                var attribute = method.GetCustomAttribute<RuntimeInitializeOnLoadMethodAttribute>();
+                if (attribute is not null && attribute.loadType == RuntimeInitializeLoadType.AfterAssembliesLoaded)
+                {
+                    method.Invoke(null, null);
+                }
             }
         }
     }

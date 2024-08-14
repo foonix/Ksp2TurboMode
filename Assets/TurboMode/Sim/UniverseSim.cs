@@ -84,6 +84,8 @@ namespace TurboMode.Sim
         {
             var resourceSystem = world.GetExistingSystemManaged<ResourceManagementSystem>();
             resourceSystem.Update();
+            var physicsUpdateSystem = world.GetExistingSystem<PhysicsDataUpdate>();
+            physicsUpdateSystem.Update(world.Unmanaged);
             var rigidbodySystem = world.GetExistingSystemManaged<RigidbodySystem>();
             rigidbodySystem.Update();
         }
@@ -97,6 +99,7 @@ namespace TurboMode.Sim
 
             world.CreateSystemManaged<RigidbodySystem>();
             world.CreateSystemManaged<ResourceManagementSystem>();
+            world.GetOrCreateSystem<PhysicsDataUpdate>();
 
             // Not using default groups yet, but set them up anyway.  Maybe someone will want them?
             var playerLoop = PlayerLoop.GetCurrentPlayerLoop();

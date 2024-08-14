@@ -14,12 +14,10 @@ namespace TurboMode.Sim.Components
     public struct Part : IComponentData
     {
         public double dryMass;
-        public double effectiveMass;
 
         public Part(PartComponent part)
         {
             dryMass = part.DryMass;
-            effectiveMass = 0;
         }
     }
 
@@ -49,6 +47,7 @@ namespace TurboMode.Sim.Components
     public struct RigidbodyComponent : IComponentData
     {
         public Vector3d accelerations;
+        public double effectiveMass;
     }
 
     public struct KerbalStorage : IComponentData

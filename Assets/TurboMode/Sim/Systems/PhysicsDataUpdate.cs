@@ -9,9 +9,10 @@ namespace TurboMode.Sim.Systems
     {
         EntityQuery massUpdateQuery;
 
-        public ComponentTypeHandle<RigidbodyComponent> rigidbodyComponentHandle;
-        public ComponentTypeHandle<Part> partHandle;
-        public ComponentTypeHandle<KerbalStorage> kerbalStorageHandle;
+        ComponentTypeHandle<RigidbodyComponent> rigidbodyComponentHandle;
+        ComponentTypeHandle<Part> partHandle;
+        ComponentTypeHandle<KerbalStorage> kerbalStorageHandle;
+        BufferTypeHandle<ContainedResource> containedResourceHandle;
 
         public void OnCreate(ref SystemState state)
         {
@@ -22,6 +23,7 @@ namespace TurboMode.Sim.Systems
             rigidbodyComponentHandle = state.GetComponentTypeHandle<RigidbodyComponent>(false);
             partHandle = state.GetComponentTypeHandle<Part>(true);
             kerbalStorageHandle = state.GetComponentTypeHandle<KerbalStorage>(true);
+            containedResourceHandle = state.GetBufferTypeHandle<ContainedResource>(true);
         }
         public readonly void OnDestroy(ref SystemState state) { }
 
@@ -30,20 +32,30 @@ namespace TurboMode.Sim.Systems
             rigidbodyComponentHandle.Update(ref state);
             partHandle.Update(ref state);
             kerbalStorageHandle.Update(ref state);
+            containedResourceHandle.Update(ref state);
+
+            var resourceTypes = SystemAPI.GetSingletonBuffer<ResourceTypeData>(true);
 
             new UpdateMassChunks()
             {
                 rigidbodyComponentHandle = rigidbodyComponentHandle,
                 partHandle = partHandle,
                 kerbalStorageHandle = kerbalStorageHandle,
+                containedResourceHandle = containedResourceHandle,
+                resourceTypeBuffer = resourceTypes,
             }.Run(massUpdateQuery);
         }
 
         private partial struct UpdateMassChunks : IJobChunk
         {
+            // per entity
             public ComponentTypeHandle<RigidbodyComponent> rigidbodyComponentHandle;
             public ComponentTypeHandle<Part> partHandle;
             public ComponentTypeHandle<KerbalStorage> kerbalStorageHandle;
+            public BufferTypeHandle<ContainedResource> containedResourceHandle;
+
+            // singleton
+            public DynamicBuffer<ResourceTypeData> resourceTypeBuffer;
 
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
             {
@@ -58,15 +70,35 @@ namespace TurboMode.Sim.Systems
                     rigidbodies[i] = rbc;
                 }
 
-                NativeArray<KerbalStorage> kerbals = chunk.GetNativeArray(ref kerbalStorageHandle);
-                if (kerbals.IsCreated)
+                if (chunk.Has<KerbalStorage>())
                 {
+                    NativeArray<KerbalStorage> kerbals = chunk.GetNativeArray(ref kerbalStorageHandle);
                     var storageEnumerator = new ChunkEntityEnumerator(useEnabledMask, chunkEnabledMask, chunk.Count);
                     while (storageEnumerator.NextEntityIndex(out var i))
                     {
                         var rbc = rigidbodies[i];
                         // TODO: actual kerbal mass
                         rbc.effectiveMass += kerbals[i].count * 300f;
+                        rigidbodies[i] = rbc;
+                    }
+                }
+
+                if (chunk.Has<ContainedResource>())
+                {
+                    BufferAccessor<ContainedResource> storedResources = chunk.GetBufferAccessor(ref containedResourceHandle);
+                    for (int i = 0; i < storedResources.Length; i++)
+                    {
+                        var rbc = rigidbodies[i];
+                        var stored = storedResources[i];
+
+                        double resourceMass = 0;
+
+                        foreach (var storedResource in stored)
+                        {
+                            var typeData = resourceTypeBuffer[storedResource.type];
+                            resourceMass += typeData.massPerUnit * storedResource.amount;
+                        }
+                        rbc.effectiveMass += resourceMass;
                         rigidbodies[i] = rbc;
                     }
                 }

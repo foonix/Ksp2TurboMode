@@ -15,6 +15,8 @@ namespace TurboMode.Behaviors
         SpaceSimulation spaceSim;
         SpaceSimulationMonitor spaceSimMonitor;
 
+        KSP.Sim.impl.PhysicsSpaceProvider origPhysicsSpace;
+
         bool initialized;
 
         private void Start()
@@ -74,6 +76,14 @@ namespace TurboMode.Behaviors
             {
                 spaceSimMonitor = new SpaceSimulationMonitor(gameInstance.SpaceSimulation);
                 spaceSim = gameInstance.SpaceSimulation;
+            }
+
+            var currentPhysicsSpace = GameManager.Instance?.Game?.UniverseView?.PhysicsSpace as KSP.Sim.impl.PhysicsSpaceProvider;
+            if (currentPhysicsSpace && currentPhysicsSpace != origPhysicsSpace)
+            {
+                var ours = currentPhysicsSpace.gameObject.AddComponent<PhysicsSpaceProvider>();
+                GameManager.Instance.Game.UniverseView.SetProperty("PhysicsSpace", ours);
+                origPhysicsSpace = currentPhysicsSpace;
             }
         }
     }

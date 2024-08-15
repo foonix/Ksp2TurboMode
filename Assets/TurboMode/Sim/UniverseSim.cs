@@ -9,8 +9,6 @@ using TurboMode.Sim.Systems;
 using Unity.Entities;
 using Unity.Profiling;
 using UnityEngine;
-using UnityEngine.LowLevel;
-using UnityEngine.PlayerLoop;
 
 namespace TurboMode.Sim
 {
@@ -105,11 +103,11 @@ namespace TurboMode.Sim
             world.GetOrCreateSystem<PhysicsDataUpdate>();
 
             // Not using default groups yet, but set them up anyway.  Maybe someone will want them?
-            var playerLoop = PlayerLoop.GetCurrentPlayerLoop();
-            ScriptBehaviourUpdateOrder.AppendSystemToPlayerLoop(simUpdateGroup, ref playerLoop, typeof(FixedUpdate));
-            PlayerLoop.SetPlayerLoop(playerLoop);
+            //var playerLoop = PlayerLoop.GetCurrentPlayerLoop();
+            //ScriptBehaviourUpdateOrder.AppendSystemToPlayerLoop(simUpdateGroup, ref playerLoop, typeof(FixedUpdate));
+            //PlayerLoop.SetPlayerLoop(playerLoop);
 
-            ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop(world);
+            //ScriptBehaviourUpdateOrder.AppendWorldToCurrentPlayerLoop(world);
 
             (partTypeSingleton, partTypeMapSingleton) = PartDefintionData.BuildDbSingleton(em);
         }

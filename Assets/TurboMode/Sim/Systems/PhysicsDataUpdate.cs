@@ -1,10 +1,12 @@
 using TurboMode.Sim.Components;
+using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Entities;
 
 namespace TurboMode.Sim.Systems
 {
+    [BurstCompile]
     public partial struct PhysicsDataUpdate : ISystem
     {
         EntityQuery massUpdateQuery;
@@ -20,6 +22,7 @@ namespace TurboMode.Sim.Systems
         // PhysicsSettings.PHYSX_MINIMUM_PART_MASS
         private const double MINIMUM_PART_MASS = 0.001;
 
+        [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
             massUpdateQuery = new EntityQueryBuilder(Allocator.Temp)
@@ -34,6 +37,7 @@ namespace TurboMode.Sim.Systems
         }
         public readonly void OnDestroy(ref SystemState state) { }
 
+        [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             rigidbodyComponentHandle.Update(ref state);
@@ -60,6 +64,7 @@ namespace TurboMode.Sim.Systems
         /// <summary>
         /// Update Part and Rigidbody data together.
         /// </summary>
+        [BurstCompile]
         private partial struct UpdateMassChunks : IJobChunk
         {
             // per entity
@@ -73,6 +78,7 @@ namespace TurboMode.Sim.Systems
             public DynamicBuffer<ResourceTypeData> resourceTypeBuffer;
             public DynamicBuffer<PartDefintionData> partDefinitions;
 
+            [BurstCompile]
             public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
             {
                 NativeArray<RigidbodyComponent> rigidbodies = chunk.GetNativeArray(ref rigidbodyComponentHandle);

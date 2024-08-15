@@ -27,20 +27,24 @@ namespace TurboMode.Sim.Components
         }
     }
 
-    public struct SimObject : IComponentData
+    public class SimObject : IComponentData
     {
         public IGGuid guid;
         public Entity owner;
         public double utCreationTime;
+        public SimulationObjectModel inUniverse;
         //public Position position;
         //public Rotation rotation;
         // type flags enum?
+
+        public SimObject() { }
 
         public SimObject(SimulationObjectModel obj)
         {
             guid = obj.GlobalId;
             utCreationTime = obj.UTCreationTime;
             owner = default;
+            inUniverse = obj;
         }
     }
 

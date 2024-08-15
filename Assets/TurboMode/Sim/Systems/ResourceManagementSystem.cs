@@ -39,8 +39,7 @@ namespace TurboMode.Sim.Systems
                 .WithName("ScrapeResourceAmounts")
                 .ForEach((ref DynamicBuffer<ContainedResource> resourceContainer, in SimObject simObject) =>
                 {
-                    var resourceHolder = universeSim.universeModel.FindSimObject(simObject.guid);
-                    var prc = resourceHolder.Part.PartResourceContainer;
+                    var prc = simObject.inUniverse.Part.PartResourceContainer;
 
                     UpdateResources(ref resourceContainer, prc);
                 })
@@ -74,8 +73,7 @@ namespace TurboMode.Sim.Systems
                 .ForEach((ref MassModifiers massModifiers, in SimObject simObject) =>
                 {
                     double massFound = 0;
-                    var simObj = universeSim.universeModel.FindSimObject(simObject.guid);
-                    foreach (var module in simObj.Part.Modules.Values)
+                    foreach (var module in simObject.inUniverse.Part.Modules.Values)
                     {
                         foreach (var moduleData in module.DataModules.Values)
                         {

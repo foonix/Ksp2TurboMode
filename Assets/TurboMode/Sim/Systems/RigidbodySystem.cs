@@ -32,7 +32,7 @@ namespace TurboMode.Sim.Systems
         public static void RbbFixedUpdateShunt(Action<object, float> orig, RigidbodyBehavior rbb, float deltaTime) { }
         public static void VoidShutoff(Action<object> orig, object origObject) { }
 
-        private static readonly ProfilerMarker s_RbbFixedUpdate = new("RigidbodySystem fixed update");
+        private static readonly ProfilerMarker s_RbbFixedUpdate = new("RigidbodySystem RigidbodyBehavior.FixedUpdate()");
 
         private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partMassField
             = new(typeof(PartComponent).GetField("mass", BindingFlags.NonPublic | BindingFlags.Instance));
@@ -57,7 +57,7 @@ namespace TurboMode.Sim.Systems
                 .ForEach(
                 (ref Part part, in SimObject simObj) =>
                 {
-                    var partComponent = universeSim.universeModel.FindSimObject(simObj.guid).Part;
+                    var partComponent = simObj.inUniverse.Part;
                     partMassField.Set(partComponent, part.dryMass);
                     partGreenMassField.Set(partComponent, part.greenMass);
                     partResourceMass.Set(partComponent, part.wetMass);
@@ -71,7 +71,7 @@ namespace TurboMode.Sim.Systems
                 (ref Vessel vessel, in SimObject simObj) =>
                 {
                     // cache vessel gravity for active physic parts
-                    var vesselObj = universeSim.universeModel.FindSimObject(simObj.guid);
+                    var vesselObj = simObj.inUniverse;
                     if (vesselObj.objVesselBehavior)
                     {
                         vessel.gravityAtCurrentLocation = vesselObj.objVesselBehavior.PartOwner.GetGravityForceAtCurrentPosition();
@@ -89,7 +89,7 @@ namespace TurboMode.Sim.Systems
                     var vessel = vesselLookup[simObj.owner];
                     rbc.accelerations = vessel.gravityAtCurrentLocation;
 
-                    var rbObj = universeSim.universeModel.FindSimObject(simObj.guid);
+                    var rbObj = simObj.inUniverse;
                     var rbView = GameManager.Instance.Game.SpaceSimulation.ModelViewMap.FromModel(rbObj);
 
                     if (!rbView || !rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
@@ -123,10 +123,8 @@ namespace TurboMode.Sim.Systems
             var vessel = rbb.ViewObject.Vessel;
             var rbbIsEnabled = rbb.enabled;
 
-            s_RbbFixedUpdate.Begin(rbb);
             if (rbbIsEnabled)
                 updateToSimObject.Invoke(rbb, null);
-            s_RbbFixedUpdate.End();
 
             Physics.autoSyncTransforms = false;
             if (Math.Abs(rbb.mass - model.mass) > PhysicsSettings.PHYSX_MASS_TOLERANCE)

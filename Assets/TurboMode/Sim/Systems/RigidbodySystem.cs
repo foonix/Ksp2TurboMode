@@ -4,6 +4,7 @@ using KSP.Sim.impl;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Reflection;
+using TurboMode.Patches;
 using TurboMode.Sim.Components;
 using Unity.Entities;
 using Unity.Profiling;
@@ -20,14 +21,16 @@ namespace TurboMode.Sim.Systems
     [DisableAutoCreation]
     public partial class RigidbodySystem : SystemBase
     {
+#pragma warning disable IDE0052 // Remove unread private members
         readonly Hook rbbOnUpdateShutoff = new(
                 typeof(RigidbodyBehavior).GetMethod("OnFixedUpdate"),
                 (Action<Action<System.Object, float>, RigidbodyBehavior, float>)RbbFixedUpdateShunt
-                );
-        readonly Hook partComponentMassUpdateShutoff = new(
-            typeof(PartComponent).GetMethod("UpdateMass"),
-            (Action<Action<object>, object>)VoidShutoff
             );
+        readonly Hook partComponentMassUpdateShutoff = new(
+                typeof(PartComponent).GetMethod("UpdateMass"),
+                (Action<Action<object>, object>)VoidShutoff
+            );
+#pragma warning restore IDE0052 // Remove unread private members
 
         public static void RbbFixedUpdateShunt(Action<object, float> orig, RigidbodyBehavior rbb, float deltaTime) { }
         public static void VoidShutoff(Action<object> orig, object origObject) { }
@@ -41,16 +44,23 @@ namespace TurboMode.Sim.Systems
         private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partResourceMass
             = new(typeof(PartComponent).GetField("resourceMass", BindingFlags.NonPublic | BindingFlags.Instance));
 
+        static ComponentLookup<Vessel> vesselLookup;
+
+        protected override void OnCreate()
+        {
+            base.OnCreate();
+            vesselLookup = GetComponentLookup<Vessel>(true);
+        }
+
         protected override void OnUpdate()
         {
-            var universeSim = SystemAPI.ManagedAPI.GetSingleton<UniverseRef>();
             var game = GameManager.Instance.Game;
-
             if (!game.IsSimulationRunning())
             {
                 return;
             }
-            var vesselLookup = GetComponentLookup<Vessel>(true);
+
+            vesselLookup.Update(this);
 
             Entities
                 .WithName("WritePartMass")
@@ -90,7 +100,8 @@ namespace TurboMode.Sim.Systems
                     rbc.accelerations = vessel.gravityAtCurrentLocation;
 
                     var rbObj = simObj.inUniverse;
-                    var rbView = GameManager.Instance.Game.SpaceSimulation.ModelViewMap.FromModel(rbObj);
+                    var sim = GameManager.Instance.Game.SpaceSimulation;
+                    var rbView = sim.ModelViewMap.FromModel(rbObj);
 
                     if (!rbView || !rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
                     {
@@ -99,7 +110,7 @@ namespace TurboMode.Sim.Systems
 
                     var rbb = rbView.Rigidbody;
                     s_RbbFixedUpdate.Begin(rbb);
-                    UpdateRbForces(rbb, universeSim.universeModel, rbc.accelerations);
+                    UpdateRbForces(rbb, sim.UniverseModel, rbc.accelerations);
                     _isHandCorrectionCheckPendingField.Set(rbb, true);
                     s_RbbFixedUpdate.End();
                 })
@@ -112,9 +123,7 @@ namespace TurboMode.Sim.Systems
         // So just do obvious optimizations like moving inner loop stuff out for now.
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, bool> _isHandCorrectionCheckPendingField
             = new(typeof(RigidbodyBehavior).GetField("_isHandCorrectionCheckPending", BindingFlags.NonPublic | BindingFlags.Instance));
-        private static readonly MethodInfo updateToSimObject
-            = typeof(RigidbodyBehavior).GetMethod("UpdateToSimObject", BindingFlags.NonPublic | BindingFlags.Instance);
-        private void UpdateRbForces(RigidbodyBehavior rbb, UniverseModel universeModel, Vector3d gravity)
+        private static void UpdateRbForces(RigidbodyBehavior rbb, UniverseModel universeModel, Vector3d gravity)
         {
             var model = rbb.Model;
             var activeRigidBody = rbb.activeRigidBody;
@@ -124,7 +133,7 @@ namespace TurboMode.Sim.Systems
             var rbbIsEnabled = rbb.enabled;
 
             if (rbbIsEnabled)
-                updateToSimObject.Invoke(rbb, null);
+                RefactorRigidbodyBehavior.UpdateToSimObject(rbb);
 
             Physics.autoSyncTransforms = false;
             if (Math.Abs(rbb.mass - model.mass) > PhysicsSettings.PHYSX_MASS_TOLERANCE)

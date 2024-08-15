@@ -211,5 +211,57 @@ namespace TurboMode.Patches
                 SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
             }
         }
+
+        // initial putting this here to get around reflection invoke,
+        // but can possibly implment some Burst helpers to speed things up.
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, Vector3d> localPositionField
+            = new(typeof(RigidbodyBehavior).GetField("<localPosition>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, QuaternionD> localRotationField
+            = new(typeof(RigidbodyBehavior).GetField("<localRotation>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, Vector> relativeVelocityField
+            = new(typeof(RigidbodyBehavior).GetField("<relativeVelocity>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+        public static void UpdateToSimObject(RigidbodyBehavior rbb)
+        {
+            var activeRigidBody = rbb.activeRigidBody;
+            var physicsSpace = rbb.ViewObject.Universe.PhysicsSpace;
+            var coordinateSystem = rbb.Model.transform.parent;
+            Transform thisUnityTransform = rbb.transform;
+
+            bool hasActiveRigidbody = activeRigidBody != null;
+            Position position = physicsSpace.PhysicsToPosition(thisUnityTransform.position);
+            localPositionField.Set(rbb, coordinateSystem.ToLocalPosition(position));
+            Rotation rotation = physicsSpace.PhysicsToRotation(thisUnityTransform.rotation);
+            localRotationField.Set(rbb, coordinateSystem.ToLocalRotation(rotation));
+            if (hasActiveRigidbody)
+            {
+                if (rbb.ViewObject.PartOwner == null)
+                {
+                    Velocity otherVelocity = physicsSpace.PhysicsToVelocity(activeRigidBody.velocity);
+                    relativeVelocityField.Set(rbb, rbb.relativeToMotion.ToRelativeVelocity(otherVelocity, rbb.Position));
+                }
+                else
+                {
+                    PartOwnerComponent partOwner = rbb.SimObjectComponent.SimulationObject.PartOwner;
+                    relativeVelocityField.Set(rbb, rbb.relativeToMotion.ToRelativeVelocity(partOwner.GetVelocityMassAverage(), rbb.Position));
+                }
+                if (rbb.ViewObject.PartOwner == null)
+                {
+                    AngularVelocity otherAngularVelocity = physicsSpace.PhysicsToAngularVelocity(activeRigidBody.angularVelocity);
+                    rbb.relativeAngularVelocity = rbb.relativeToMotion.ToRelativeAngularVelocity(otherAngularVelocity);
+                }
+                else
+                {
+                    rbb.relativeAngularVelocity = rbb.relativeToMotion.ToRelativeAngularVelocity(rbb.Model.SimulationObject.PartOwner.AngularVelocityMassAvg);
+                }
+            }
+            positionUpdatedHelper.Get(rbb)?.Invoke(rbb.Position);
+            rotationUpdatedHelper.Get(rbb)?.Invoke(rbb.Rotation);
+            if (hasActiveRigidbody)
+            {
+                velocityUpdatedHelper.Get(rbb)?.Invoke(rbb.Velocity);
+                angularVelocityUpdatedHelper.Get(rbb)?.Invoke(rbb.AngularVelocity);
+                rbb.Model.inertiaTensor = physicsSpace.PhysicsToVector(activeRigidBody.inertiaTensor);
+            }
+        }
     }
 }

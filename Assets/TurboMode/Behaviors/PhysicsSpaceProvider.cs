@@ -1,6 +1,7 @@
 using KSP.Api;
 using KSP.Sim;
 using KSP.Sim.impl;
+using Unity.Profiling;
 using UnityEngine;
 
 namespace TurboMode.Behaviors
@@ -9,10 +10,12 @@ namespace TurboMode.Behaviors
     public class PhysicsSpaceProvider : MonoBehaviour, IPhysicsSpaceProvider
     {
         KSP.Sim.impl.PhysicsSpaceProvider orig;
+        InertialFrame _inertialReferenceFrame;
 
         private void Awake()
         {
             orig = GetComponent<KSP.Sim.impl.PhysicsSpaceProvider>();
+            _inertialReferenceFrame = orig.GetField<KSP.Sim.impl.PhysicsSpaceProvider, InertialFrame>("_inertialReferenceFrame");
         }
 
         public FloatingOrigin FloatingOrigin => orig.FloatingOrigin;
@@ -94,14 +97,42 @@ namespace TurboMode.Behaviors
             orig.SetReferenceFrame(referenceFrame);
         }
 
+        private static readonly ProfilerMarker s_VectorToPhysics_Vector = new("TM: VectorToPhysics(Vector)");
         public Vector3d VectorToPhysics(Vector vector)
         {
-            return orig.VectorToPhysics(vector);
+            s_VectorToPhysics_Vector.Begin();
+
+            // Assumptions:
+            // _inertialReferenceFrame.inertialReferenceFrame is never not a NonRotatingFrame for this service.
+            // It's never our reference frame on the vector.
+
+            var frame = _inertialReferenceFrame.inertialReferenceFrame as NonRotatingFrame;
+            var vectorCoordinateSystem = vector.coordinateSystem;
+            var vector3d = vector.vector;
+
+            if (frame == vectorCoordinateSystem)
+            {
+                s_VectorToPhysics_Vector.End();
+                return vector3d;
+            }
+
+            //var result = frame.ToLocalVector(vectorCoordinateSystem, vector3d);
+
+            //Matrix4x4D mostRecentInverseMatrix = frame.ComputeTransformFromOther(vectorCoordinateSystem);
+            Matrix4x4D mostRecentInverseMatrix = MathUtil.ComputeTransformFromOther(frame, vectorCoordinateSystem);
+            Vector3d result = mostRecentInverseMatrix.TransformVector(vector3d);
+
+            s_VectorToPhysics_Vector.End();
+            return result;
         }
 
+        private static readonly ProfilerMarker s_VectorToPhysics_Framed = new("TM: VectorToPhysics(Framed)");
         public Vector3d VectorToPhysics(ICoordinateSystem referenceFrame, Vector3d localPosition)
         {
-            return orig.VectorToPhysics(referenceFrame, localPosition);
+            s_VectorToPhysics_Framed.Begin();
+            var result = orig.VectorToPhysics(referenceFrame, localPosition);
+            s_VectorToPhysics_Framed.End();
+            return result;
         }
 
         public Vector3d VelocityToPhysics(Velocity velocity, Position whereIsIt)

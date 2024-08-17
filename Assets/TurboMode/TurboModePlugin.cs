@@ -83,6 +83,7 @@ namespace TurboMode
             if (shutoffUnusedWindowHierarchies.Value)
                 hooks.AddRange(Patches.ShutoffUnusedWindowHierarchies.MakeHooks());
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
+            hooks.AddRange(Patches.BurstifyTransformFrames.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));

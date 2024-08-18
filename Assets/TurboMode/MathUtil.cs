@@ -1,9 +1,7 @@
-using KSP.Api;
 using KSP.Sim;
 using KSP.Sim.impl;
 using Unity.Burst;
 using Unity.Mathematics;
-using UnityEngine;
 
 namespace TurboMode
 {
@@ -15,6 +13,9 @@ namespace TurboMode
     {
         static readonly Matrix4x4D identityMatrixd = new(1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0);
 
+        /// <summary>
+        /// Drop-in replacement for TransformFrame.ComputeTransformFromOther()
+        /// </summary>
         public static Matrix4x4D ComputeTransformFromOther(TransformFrame frame, ITransformFrame other)
         {
             if (frame == other)

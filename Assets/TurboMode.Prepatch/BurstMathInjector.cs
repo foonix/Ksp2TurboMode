@@ -1,3 +1,5 @@
+using BepInEx;
+using BepInEx.Configuration;
 using BepInEx.Logging;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
@@ -18,20 +20,41 @@ namespace TurboMode
     /// </summary>
     public class BurstMathInjector
     {
+        internal static ConfigFile config;
         internal static ManualLogSource LogSource;
+        internal static bool enabled;
 
-        public static IEnumerable<string> TargetDLLs { get; } = new[] { "Assembly-CSharp.dll" };
+        public static IEnumerable<string> TargetDLLs { get; private set; } = new[] { "Assembly-CSharp.dll" };
 
         public static void Initialize()
         {
             LogSource = Logger.CreateLogSource("TurboMode.Preload");
-            LogSource.LogInfo("Initialize");
+            LogSource.LogInfo("BurstMath Initialize()");
+
+            var configPath = Utility.CombinePaths(Paths.ConfigPath, "TurboMode.cfg");
+            config = new ConfigFile(configPath, saveOnInit: false)
+            {
+                // We have to Bind() here to get the value, but avoid writing because we don't have all of the settings.
+                SaveOnConfigSet = false
+            };
+
+            // Can't get this from TurboModePlugin, because we must avoid loading Assembly-CSharp.dll.
+            enabled = config.Bind(
+                "General",
+                "BurstMath",
+                true,
+                "Use Unity Burst code to speed up certain math operations, such as floating origin and reference frame calculations."
+            ).Value;
+
+            if (!enabled)
+            {
+                LogSource.LogInfo("BurstMath option is disabled. Skipping preload patching.");
+                TargetDLLs = new string[0];
+            }
         }
 
         public static void Patch(ref AssemblyDefinition assembly)
         {
-            // Patcher code here
-            LogSource.LogInfo("Hello World");
 
             var thisAsmPath = typeof(BurstMathInjector).Assembly.Location;
             var tmAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(thisAsmPath), "..", "plugins", "TurboMode", "TurboMode.dll"));

@@ -27,6 +27,7 @@ namespace TurboMode
         public ConfigEntry<bool> testModeConfig;
         public ConfigEntry<bool> enableVesselSelfCollideConfig;
         public ConfigEntry<bool> enableSelectivePhysicsSync;
+        public ConfigEntry<bool> burstMath;
         public ConfigEntry<bool> enableEcsSimConfig;
         public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
 
@@ -51,6 +52,12 @@ namespace TurboMode
                 "EnableSelectivePhysicsSync",
                 true,
                 "Disables Unity's Physics.autoSyncTransforms feature for certain operations unlikely to need it."
+            );
+            burstMath = Config.Bind(
+                "General",
+                "BurstMath",
+                true,
+                "Use Unity Burst code to speed up certain math operations, such as floating origin and reference frame calculations."
             );
             shutoffUnusedWindowHierarchies = Config.Bind(
                 "General",

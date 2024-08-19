@@ -102,7 +102,7 @@ namespace TurboMode
             logSource.LogInfo($"toReplace {toReplace}");
 
             var replacementSrc = tmAssembly
-                .MainModule.GetType("TurboMode.MathUtil")
+                .MainModule.GetType("TurboMode.Patches.BurstifyTransformFrames")
                 .Methods.First(method => method.Name == "ComputeTransformFromOther");
 
             var replacement = assembly.MainModule.ImportReference(replacementSrc);

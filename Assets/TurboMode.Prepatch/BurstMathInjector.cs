@@ -20,16 +20,18 @@ namespace TurboMode
     /// </summary>
     public class BurstMathInjector
     {
-        internal static ConfigFile config;
-        internal static ManualLogSource LogSource;
-        internal static bool enabled;
+        static bool enabled;
+
+        static ConfigFile config;
+        static ManualLogSource logSource;
+        static AssemblyDefinition tmAssembly;
 
         public static IEnumerable<string> TargetDLLs { get; private set; } = new[] { "Assembly-CSharp.dll" };
 
         public static void Initialize()
         {
-            LogSource = Logger.CreateLogSource("TurboMode.Preload");
-            LogSource.LogInfo("BurstMath Initialize()");
+            logSource = Logger.CreateLogSource("TurboMode.Preload");
+            logSource.LogInfo("BurstMath Initialize()");
 
             var configPath = Utility.CombinePaths(Paths.ConfigPath, "TurboMode.cfg");
             config = new ConfigFile(configPath, saveOnInit: false)
@@ -48,28 +50,56 @@ namespace TurboMode
 
             if (!enabled)
             {
-                LogSource.LogInfo("BurstMath option is disabled. Skipping preload patching.");
+                logSource.LogInfo("BurstMath option is disabled. Skipping preload patching.");
                 TargetDLLs = new string[0];
             }
         }
 
+        public static void Finish()
+        {
+            // free up unused
+            config = null;
+            logSource = null;
+            tmAssembly = null;
+        }
+
         public static void Patch(ref AssemblyDefinition assembly)
         {
-
+            // Get our main assembly signatures without actually loading it.
             var thisAsmPath = typeof(BurstMathInjector).Assembly.Location;
-            var tmAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(thisAsmPath), "..", "plugins", "TurboMode", "TurboMode.dll"));
+            tmAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(thisAsmPath), "..", "plugins", "TurboMode", "TurboMode.dll"));
 
-            var targetMethod = assembly.MainModule.GetType("KSP.Sim.impl.TransformFrame")
-                .Methods.First(method => method.Name == "ToLocalPosition" && method.Parameters.Count == 2);
 
-            LogSource.LogInfo($"Target method {targetMethod}");
+            PatchComputeTransformFromOtherCaller(
+                assembly,
+                assembly.MainModule.GetType("KSP.Sim.impl.TransformFrame")
+                .Methods.First(method => method.Name == "ToLocalPosition" && method.Parameters.Count == 2)
+            );
+            PatchComputeTransformFromOtherCaller(
+                assembly,
+                assembly.MainModule.GetType("KSP.Sim.impl.TransformFrame")
+                .Methods.First(method => method.Name == "ToLocalVector" && method.Parameters.Count == 2)
+            );
+            PatchComputeTransformFromOtherCaller(
+                assembly,
+                assembly.MainModule.GetType("KSP.Sim.impl.TransformFrame")
+                .Methods.First(method => method.Name == "ToLocalTransformationMatrix")
+            );
+        }
+
+        private static void PatchComputeTransformFromOtherCaller(
+            AssemblyDefinition assembly,
+            MethodDefinition targetMethod
+            )
+        {
+            logSource.LogInfo($"Target method {targetMethod}");
 
             var toReplace = assembly.MainModule.Types
                 .First(t => t.Name == "TransformFrame")
                 .Methods
                 .First(m => m.Name == "ComputeTransformFromOther");
 
-            LogSource.LogInfo($"toReplace {toReplace}");
+            logSource.LogInfo($"toReplace {toReplace}");
 
             var replacementSrc = tmAssembly
                 .MainModule.GetType("TurboMode.MathUtil")
@@ -77,7 +107,7 @@ namespace TurboMode
 
             var replacement = assembly.MainModule.ImportReference(replacementSrc);
 
-            LogSource.LogInfo($"replacement {replacement}");
+            logSource.LogInfo($"replacement {replacement}");
 
             var instructions = targetMethod.Body.Instructions;
             var newInstructions = new Collection<Instruction>();
@@ -87,7 +117,7 @@ namespace TurboMode
                 if (instruction.MatchCallOrCallvirt(toReplace))
                 {
                     newInstructions.Add(Instruction.Create(OpCodes.Call, replacement));
-                    LogSource.LogInfo($"Found call {instruction}");
+                    logSource.LogInfo($"Found call {instruction}");
                     continue;
                 }
 

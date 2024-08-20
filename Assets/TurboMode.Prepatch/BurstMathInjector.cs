@@ -3,9 +3,7 @@ using BepInEx.Configuration;
 using BepInEx.Logging;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
-using Mono.Collections.Generic;
 using MonoMod.Cil;
-using MonoMod.Utils;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -94,6 +92,9 @@ namespace TurboMode
         {
             logSource.LogInfo($"Target method {targetMethod}");
 
+            ILContext context = new(targetMethod);
+            ILCursor cursor = new(context);
+
             var toReplace = assembly.MainModule.Types
                 .First(t => t.Name == "TransformFrame")
                 .Methods
@@ -109,23 +110,11 @@ namespace TurboMode
 
             logSource.LogInfo($"replacement {replacement}");
 
-            var instructions = targetMethod.Body.Instructions;
-            var newInstructions = new Collection<Instruction>();
-
-            foreach (var instruction in instructions)
-            {
-                if (instruction.MatchCallOrCallvirt(toReplace))
-                {
-                    newInstructions.Add(Instruction.Create(OpCodes.Call, replacement));
-                    logSource.LogInfo($"Found call {instruction}");
-                    continue;
-                }
-
-                newInstructions.Add(instruction);
-            }
-
-            instructions.Clear();
-            instructions.AddRange(newInstructions);
+            cursor.GotoNext(
+                x => x.MatchCallOrCallvirt("KSP.Sim.impl.TransformFrame", "ComputeTransformFromOther")
+            );
+            cursor.Remove();
+            cursor.Emit(OpCodes.Call, replacement);
         }
     }
 }

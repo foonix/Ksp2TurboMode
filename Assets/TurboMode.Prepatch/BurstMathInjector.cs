@@ -25,6 +25,7 @@ namespace TurboMode
         static AssemblyDefinition tmAssembly;
 
         static MethodReference transformPoint;
+        static MethodReference transformVector;
 
         public static IEnumerable<string> TargetDLLs { get; private set; } = new[] { "Assembly-CSharp.dll" };
 
@@ -72,7 +73,11 @@ namespace TurboMode
             transformPoint = assembly.MainModule.ImportReference(tmAssembly
                 .MainModule.GetType("TurboMode.MathUtil")
                 .Methods.First(method => method.Name == "TransformPoint")
-                );
+            );
+            transformVector = assembly.MainModule.ImportReference(tmAssembly
+                .MainModule.GetType("TurboMode.MathUtil")
+                .Methods.First(method => method.Name == "TransformVector")
+            );
 
             PatchComputeTransformFromOtherCaller(
                 assembly,
@@ -122,13 +127,14 @@ namespace TurboMode
             cursor.Remove();
             cursor.Emit(OpCodes.Call, replacement);
 
-            PatchVectorCalls(cursor);
+            PatchVectorMultiplyCalls(cursor, "Matrix4x4D", "TransformPoint", transformPoint);
+            PatchVectorMultiplyCalls(cursor, "Matrix4x4D", "TransformVector", transformVector);
         }
 
-        private static void PatchVectorCalls(ILCursor cursor)
+        private static void PatchVectorMultiplyCalls(ILCursor cursor, string typeFullName, string name, MethodReference replacement)
         {
             cursor.Goto(0);
-            if (cursor.TryGotoNext(x => x.MatchCallOrCallvirt("Matrix4x4D", "TransformPoint")))
+            if (cursor.TryGotoNext(x => x.MatchCallOrCallvirt(typeFullName, name)))
             {
                 logSource.LogInfo($"Patching {cursor.Next}");
                 cursor.Index--;
@@ -141,7 +147,7 @@ namespace TurboMode
                 cursor.Remove();
                 cursor.Emit(convertedOp, which);
                 cursor.Remove();
-                cursor.Emit(OpCodes.Call, transformPoint);
+                cursor.Emit(OpCodes.Call, replacement);
                 // since we switched from a value return to void, put the output arg value back on the stack.
                 cursor.Emit(secondArgumentLoader.OpCode, secondArgumentLoader.Operand);
             }

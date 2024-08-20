@@ -20,5 +20,25 @@ namespace TurboMode
 
             first = new Matrix4x4D(math.mul(firstMatrix, secondMatrix));
         }
+
+        /// <summary>
+        /// Translate, rotate, and scale the provided Vector3d by the TRS matrix.
+        /// </summary>
+        [BurstCompile]
+        public static void TransformPoint(in Matrix4x4D matrix, ref Vector3d vector)
+        {
+            // Burst inlines this.
+            vector = matrix.TransformPoint(vector);
+        }
+
+        /// <summary>
+        /// Rotate and scale (but not translate) the provided Vector3d by the TRS matrix.
+        /// </summary>
+        [BurstCompile]
+        public static void TransformVector(in Matrix4x4D matrix, ref Vector3d vector)
+        {
+            // Burst inlines this.
+            vector = matrix.TransformVector(vector);
+        }
     }
 }

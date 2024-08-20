@@ -24,6 +24,8 @@ namespace TurboMode
         static ManualLogSource logSource;
         static AssemblyDefinition tmAssembly;
 
+        static MethodReference transformPoint;
+
         public static IEnumerable<string> TargetDLLs { get; private set; } = new[] { "Assembly-CSharp.dll" };
 
         public static void Initialize()
@@ -67,6 +69,10 @@ namespace TurboMode
             var thisAsmPath = typeof(BurstMathInjector).Assembly.Location;
             tmAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(thisAsmPath), "..", "plugins", "TurboMode", "TurboMode.dll"));
 
+            transformPoint = assembly.MainModule.ImportReference(tmAssembly
+                .MainModule.GetType("TurboMode.MathUtil")
+                .Methods.First(method => method.Name == "TransformPoint")
+                );
 
             PatchComputeTransformFromOtherCaller(
                 assembly,
@@ -95,8 +101,8 @@ namespace TurboMode
             ILContext context = new(targetMethod);
             ILCursor cursor = new(context);
 
-            var toReplace = assembly.MainModule.Types
-                .First(t => t.Name == "TransformFrame")
+            var toReplace = assembly.MainModule
+                .GetType("KSP.Sim.impl.TransformFrame")
                 .Methods
                 .First(m => m.Name == "ComputeTransformFromOther");
 
@@ -115,6 +121,46 @@ namespace TurboMode
             );
             cursor.Remove();
             cursor.Emit(OpCodes.Call, replacement);
+
+            PatchVectorCalls(cursor);
+        }
+
+        private static void PatchVectorCalls(ILCursor cursor)
+        {
+            cursor.Goto(0);
+            if (cursor.TryGotoNext(x => x.MatchCallOrCallvirt("Matrix4x4D", "TransformPoint")))
+            {
+                logSource.LogInfo($"Patching {cursor.Next}");
+                cursor.Index--;
+                var secondArgumentLoader = cursor.Next;
+                if (!TryConvertLdargToLdarga(secondArgumentLoader, out OpCode convertedOp, out byte which))
+                {
+                    logSource.LogWarning($"Unknown prior operation {cursor.Previous}");
+                    return;
+                }
+                cursor.Remove();
+                cursor.Emit(convertedOp, which);
+                cursor.Remove();
+                cursor.Emit(OpCodes.Call, transformPoint);
+                // since we switched from a value return to void, put the output arg value back on the stack.
+                cursor.Emit(secondArgumentLoader.OpCode, secondArgumentLoader.Operand);
+            }
+        }
+
+        // Convert ldarg* instrcutions to equivalent ldarga* instructions.
+        private static bool TryConvertLdargToLdarga(Instruction instr, out OpCode converted, out byte which)
+        {
+            if (!instr.MatchLdarg(out int whichArg))
+            {
+                converted = OpCodes.No;
+                which = 0;
+                return false;
+            }
+            logSource.LogInfo(OpCodes.Ldarga_S.OperandType.ToString());
+
+            converted = OpCodes.Ldarga_S;
+            which = (byte)whichArg;
+            return true;
         }
     }
 }

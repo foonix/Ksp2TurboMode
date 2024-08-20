@@ -94,6 +94,8 @@ namespace TurboMode
                 assembly.MainModule.GetType("KSP.Sim.impl.TransformFrame")
                 .Methods.First(method => method.Name == "ToLocalTransformationMatrix")
             );
+
+            Patch_PartBehavior_IWaterDetectObject(assembly);
         }
 
         private static void PatchComputeTransformFromOtherCaller(
@@ -167,6 +169,25 @@ namespace TurboMode
             converted = OpCodes.Ldarga_S;
             which = (byte)whichArg;
             return true;
+        }
+
+        private static void Patch_PartBehavior_IWaterDetectObject(AssemblyDefinition assembly)
+        {
+            var targetMethod = assembly.MainModule.GetType("KSP.Sim.impl.PartBehavior")
+                .Methods.First(method => method.Name == "KSP.Rendering.Planets.WaterManager.IWaterDetectObject.GetPosition");
+
+            ILContext context = new(targetMethod);
+            ILCursor cursor = new(context);
+
+            // original:
+            // IL_0134: call valuetype Vector3d Vector3d::op_Addition(valuetype Vector3d, valuetype Vector3d)
+            // IL_0139: call instance valuetype Vector3d Matrix4x4D::TransformPoint(valuetype Vector3d)
+            // IL_013e: stloc.s 16
+            cursor.GotoNext(x => x.MatchCallOrCallvirt("Matrix4x4D", "TransformPoint"));
+            cursor.Remove();
+            cursor.Index++; // keep stloc.s 16.
+            cursor.Emit(OpCodes.Ldloca_S, (byte)16); // operate on the storage in-place.
+            cursor.Emit(OpCodes.Call, transformPoint);
         }
     }
 }

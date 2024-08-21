@@ -2,6 +2,7 @@ using KSP.Api;
 using KSP.Sim;
 using KSP.Sim.impl;
 using System.Reflection;
+using Unity.Collections;
 
 namespace TurboMode.Patches
 {
@@ -12,6 +13,8 @@ namespace TurboMode.Patches
         private static readonly ReflectionUtil.FieldHelper<TransformFrame, Matrix4x4D> _mostRecentInverseMatrix
             = new(typeof(TransformFrame).GetField("_mostRecentInverseMatrix", BindingFlags.NonPublic | BindingFlags.Instance));
 
+        static NativeList<Matrix4x4D> tmpList = new(16, Allocator.Persistent);
+
         /// <summary>
         /// Drop-in replacement for TransformFrame.ComputeTransformFromOther()
         /// </summary>
@@ -21,16 +24,16 @@ namespace TurboMode.Patches
             {
                 return MathUtil.identityMatrixd;
             }
-            ITransformFrameInternal transformFrameInternal = other as ITransformFrameInternal;
-            if (transformFrameInternal != null && transformFrameInternal.transform.parent == frame)
+            ITransformFrameInternal otherFrameInternal = other as ITransformFrameInternal;
+            if (otherFrameInternal != null && otherFrameInternal.transform.parent == frame)
             {
-                return transformFrameInternal.localMatrix;
+                return otherFrameInternal.localMatrix;
             }
-            if (frame.transform.parent == transformFrameInternal)
+            if (frame.transform.parent == otherFrameInternal)
             {
                 return frame.localMatrixInverse;
             }
-            ITransformFrameInternal commonParent = frame.FindCommonParent(transformFrameInternal);
+            ITransformFrameInternal commonParent = frame.FindCommonParent(otherFrameInternal);
 
             // Check for cached result.  There were some IsHierarchyDirty tests here, but skipping them because
             // the callers don't seem to change the hierarchy between calls.
@@ -41,10 +44,29 @@ namespace TurboMode.Patches
                 return _mostRecentInverseMatrix.Get(frame);
             }
 
-            Matrix4x4D totalInverseMatrix = MathUtil.identityMatrixd;
-            GetConcatenatedLocalInverseMatrix(ref totalInverseMatrix, frame, commonParent);
+            // Work out from their frame, toward the common parent, which could be this frame.
             Matrix4x4D totalLocalMatrix = MathUtil.identityMatrixd;
-            GetConcatenatedLocalMatrix(ref totalLocalMatrix, transformFrameInternal, commonParent);
+            GetConcatenatedLocalMatrix(ref totalLocalMatrix, otherFrameInternal, commonParent);
+
+            // Work from the common parent into our frame from above.
+            ITransformFrameInternal next = frame;
+            Matrix4x4D totalInverseMatrix;
+            if (next != commonParent)
+            {
+                while (next != commonParent)
+                {
+                    tmpList.Add(next.localMatrixInverse);
+                    next = next._transformInternal._parentInternal;
+                }
+                MathUtil.InverseTransformStack(tmpList, out totalInverseMatrix);
+                tmpList.Clear();
+            }
+            else
+            {
+                // The other frame is our child. We only need the forward matricies.
+                totalInverseMatrix = MathUtil.identityMatrixd;
+            }
+
             MathUtil.MultiplyWithRefBursted(ref totalLocalMatrix, totalInverseMatrix);
             return totalLocalMatrix;
         }
@@ -65,6 +87,11 @@ namespace TurboMode.Patches
                 MathUtil.MultiplyWithRefBursted(ref totalLocalMatrix, current.localMatrix);
                 current = current._transformInternal._parentInternal;
             }
+        }
+
+        internal static void DisposeCachedAllocations()
+        {
+            tmpList.Dispose();
         }
     }
 }

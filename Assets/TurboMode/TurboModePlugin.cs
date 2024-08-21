@@ -5,6 +5,7 @@ using MonoMod.RuntimeDetour;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using TurboMode.Patches;
 using Unity.Burst;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -86,9 +87,11 @@ namespace TurboMode
             if (enableVesselSelfCollideConfig.Value)
                 hooks.AddRange(CollisionManagerPerformance.MakeHooks());
             if (enableSelectivePhysicsSync.Value)
-                hooks.AddRange(Patches.SelectivePhysicsAutoSync.MakeHooks());
+                hooks.AddRange(SelectivePhysicsAutoSync.MakeHooks());
             if (shutoffUnusedWindowHierarchies.Value)
-                hooks.AddRange(Patches.ShutoffUnusedWindowHierarchies.MakeHooks());
+                hooks.AddRange(ShutoffUnusedWindowHierarchies.MakeHooks());
+            // BurstMath is handled in prepatcher.
+            Application.quitting += BurstifyTransformFrames.DisposeCachedAllocations;
             hooks.AddRange(AdditionalProfilerTags.MakeHooks());
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);

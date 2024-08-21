@@ -1,4 +1,5 @@
 using Unity.Burst;
+using Unity.Collections;
 using Unity.Mathematics;
 
 namespace TurboMode
@@ -39,6 +40,23 @@ namespace TurboMode
         {
             // Burst inlines this.
             vector = matrix.TransformVector(vector);
+        }
+
+        /// <summary>
+        /// Multiply the provided stack of matrices from last to first.
+        /// </summary>
+        /// <param name="stack">A NativeList of matries used as a stack.  At least one matrix is required.</param>
+        /// <param name="result">The result of matrix multiplication.</param>
+        [BurstCompile]
+        public static void InverseTransformStack(in NativeList<Matrix4x4D> stack, out Matrix4x4D result)
+        {
+            double4x4 combined = stack[^1].ToDouble4x4();
+            for (int i = stack.Length - 1; i > 0; i--)
+            {
+                var next = stack[i - 1].ToDouble4x4();
+                combined = math.mul(combined, next);
+            }
+            result = new Matrix4x4D(combined);
         }
     }
 }

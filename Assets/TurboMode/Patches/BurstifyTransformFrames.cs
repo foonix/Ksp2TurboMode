@@ -35,11 +35,11 @@ namespace TurboMode.Patches
             }
             ITransformFrameInternal commonParent = frame.FindCommonParent(otherFrameInternal);
 
-            // Check for cached result.  There were some IsHierarchyDirty tests here, but skipping them because
-            // the callers don't seem to change the hierarchy between calls.
-            // If I'm wrong abou that, consider just deleting the cache entirely.
-            // IsHierarchyDirty does a lot of memory access that is redundant to the actual calculation.
-            if (other == _mostRecentCoordinateSystemRequest.Get(frame))
+            // Check for cached result.
+            // The original dirty checked both frames, but after some testing it looks like I can get away with only one.
+            // Disabling dirty check entirely causes some camera position glitching.  May be possible to fix in caller.
+            if (other == _mostRecentCoordinateSystemRequest.Get(frame)
+                && !IsHierarchyDirty(frame, commonParent) /*&& !IsHierarchyDirty(otherFrameInternal, commonParent)*/)
             {
                 return _mostRecentInverseMatrix.Get(frame);
             }
@@ -87,6 +87,19 @@ namespace TurboMode.Patches
                 MathUtil.MultiplyWithRefBursted(ref totalLocalMatrix, current.localMatrix);
                 current = current._transformInternal._parentInternal;
             }
+        }
+
+        private static bool IsHierarchyDirty(ITransformFrameInternal current, ITransformFrameInternal other)
+        {
+            while (current != other)
+            {
+                if (current.IsLocalMatrixDirty)
+                {
+                    return true;
+                }
+                current = current._transformInternal._parentInternal;
+            }
+            return false;
         }
 
         internal static void DisposeCachedAllocations()

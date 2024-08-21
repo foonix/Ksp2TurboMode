@@ -36,6 +36,7 @@ namespace TurboMode.Editor
             // config
             string modName = "TurboMode";
             var tmPluginDir = Path.Combine(tkSettings.GamePath, "BepInEx", "plugins", modName);
+            var bepInExPrepatchDir = Path.Combine(tkSettings.GamePath, "BepInEx", "patchers");
             var buildFolder = "build";
             var pluginSrcManagedAssemblies = new string[]
             {
@@ -100,6 +101,12 @@ namespace TurboMode.Editor
                         File.Delete(burstPdbDest);
                     }
                 }
+
+                // Copy BepInEx prepatch, which goes in a different directory.
+                var prepatchSrc = Path.Combine(buildFolder, $"{modName}_Data/Managed/TurboMode.Prepatch.dll");
+                var prepatchDest = Path.Combine(bepInExPrepatchDir, $"TurboMode.Prepatch.dll");
+                CopyOverwrite(prepatchSrc, prepatchDest);
+
                 Debug.Log("TurboMode build complete");
                 return true;
             }

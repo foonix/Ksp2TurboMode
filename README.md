@@ -13,6 +13,8 @@ Features:
 - BepInEx must be installed into your KSP2 game files.  I recommend using CKAN to install it.
 - Download the TurboMode-x.y.z.zip from the [release page](https://github.com/foonix/Ksp2TurboMode/releases).
 - Unzip to `BepInEx/plugins/TurboMode`
+- Move the file `TurboMode.Prepatch.dll` from `BepInEx\plugins\TurboMode` to `BepInEx\patchers` folder.
+  If it is installed correctly, the Player.log should show the message `Patching [Assembly-CSharp] with [TurboMode.BurstMathInjector]`.
 
 ## Troubleshooting
 

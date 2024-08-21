@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Reflection;
+using TurboMode.Patches;
 using Unity.Burst;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -28,6 +29,7 @@ namespace TurboMode
         public ConfigEntry<bool> testModeConfig;
         public ConfigEntry<bool> enableVesselSelfCollideConfig;
         public ConfigEntry<bool> enableSelectivePhysicsSync;
+        public ConfigEntry<bool> burstMath;
         public ConfigEntry<bool> enableEcsSimConfig;
         public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
 
@@ -52,6 +54,12 @@ namespace TurboMode
                 "EnableSelectivePhysicsSync",
                 true,
                 "Disables Unity's Physics.autoSyncTransforms feature for certain operations unlikely to need it."
+            );
+            burstMath = Config.Bind(
+                "General",
+                "BurstMath",
+                true,
+                "Use Unity Burst code to speed up certain math operations, such as floating origin and reference frame calculations."
             );
             shutoffUnusedWindowHierarchies = Config.Bind(
                 "General",
@@ -80,10 +88,15 @@ namespace TurboMode
             if (enableVesselSelfCollideConfig.Value)
                 hooks.AddRange(CollisionManagerPerformance.MakeHooks());
             if (enableSelectivePhysicsSync.Value)
-                hooks.AddRange(Patches.SelectivePhysicsAutoSync.MakeHooks());
+                hooks.AddRange(SelectivePhysicsAutoSync.MakeHooks());
             if (shutoffUnusedWindowHierarchies.Value)
-                hooks.AddRange(Patches.ShutoffUnusedWindowHierarchies.MakeHooks());
-            hooks.AddRange(AdditionalProfilerTags.MakeHooks());
+                hooks.AddRange(ShutoffUnusedWindowHierarchies.MakeHooks());
+            // BurstMath is handled in prepatcher.
+            Application.quitting += BurstifyTransformFrames.DisposeCachedAllocations;
+            if (Debug.isDebugBuild)
+            {
+                hooks.AddRange(AdditionalProfilerTags.MakeHooks());
+            }
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             var entitiesAssembly = Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));

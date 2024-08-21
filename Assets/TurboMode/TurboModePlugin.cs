@@ -92,7 +92,10 @@ namespace TurboMode
                 hooks.AddRange(ShutoffUnusedWindowHierarchies.MakeHooks());
             // BurstMath is handled in prepatcher.
             Application.quitting += BurstifyTransformFrames.DisposeCachedAllocations;
-            hooks.AddRange(AdditionalProfilerTags.MakeHooks());
+            if (Debug.isDebugBuild)
+            {
+                hooks.AddRange(AdditionalProfilerTags.MakeHooks());
+            }
 
             var cwd = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             Assembly.LoadFile(Path.Combine(cwd, "Unity.Entities.dll"));

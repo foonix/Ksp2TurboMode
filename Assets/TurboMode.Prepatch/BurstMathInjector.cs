@@ -1,14 +1,10 @@
-using BepInEx;
-using BepInEx.Configuration;
-using BepInEx.Logging;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 
-namespace TurboMode
+namespace TurboMode.Prepatch
 {
     /// <summary>
     /// Various Matrix4x4D operations can happen 10k+ times per frame, so even 0.001ms overhead from IL hooks or 
@@ -16,13 +12,9 @@ namespace TurboMode
     /// Zero-overhead modification to make this work.
     /// So we directly patch the callers' IL with Cecil.
     /// </summary>
-    public class BurstMathInjector
+    public class BurstMathInjector : TurboModePrepatch
     {
         static bool enabled;
-
-        static ConfigFile config;
-        static ManualLogSource logSource;
-        static AssemblyDefinition tmAssembly;
 
         static MethodReference transformPoint;
         static MethodReference transformVector;
@@ -31,15 +23,7 @@ namespace TurboMode
 
         public static void Initialize()
         {
-            logSource = Logger.CreateLogSource("TurboMode.Preload");
-            logSource.LogInfo("BurstMath Initialize()");
-
-            var configPath = Utility.CombinePaths(Paths.ConfigPath, "TurboMode.cfg");
-            config = new ConfigFile(configPath, saveOnInit: false)
-            {
-                // We have to Bind() here to get the value, but avoid writing because we don't have all of the settings.
-                SaveOnConfigSet = false
-            };
+            InitSharedResources();
 
             // Can't get this from TurboModePlugin, because we must avoid loading Assembly-CSharp.dll.
             enabled = config.Bind(
@@ -58,18 +42,11 @@ namespace TurboMode
 
         public static void Finish()
         {
-            // free up unused
-            config = null;
-            logSource = null;
-            tmAssembly = null;
+            CleanupSharedResources();
         }
 
         public static void Patch(ref AssemblyDefinition assembly)
         {
-            // Get our main assembly signatures without actually loading it.
-            var thisAsmPath = typeof(BurstMathInjector).Assembly.Location;
-            tmAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(thisAsmPath), "..", "plugins", "TurboMode", "TurboMode.dll"));
-
             transformPoint = assembly.MainModule.ImportReference(tmAssembly
                 .MainModule.GetType("TurboMode.MathUtil")
                 .Methods.First(method => method.Name == "TransformPoint")

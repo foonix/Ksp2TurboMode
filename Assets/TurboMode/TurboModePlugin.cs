@@ -31,6 +31,7 @@ namespace TurboMode
         public ConfigEntry<bool> burstMath;
         public ConfigEntry<bool> enableEcsSimConfig;
         public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
+        public ConfigEntry<bool> miscCleanups;
 
         private void Awake()
         {
@@ -66,6 +67,12 @@ namespace TurboMode
                 true,
                 "Completely deactivate non-visible UI windows. May cause slight startup jitter when opening them."
             );
+            miscCleanups = Config.Bind(
+                "General",
+                "MiscCleanups",
+                true,
+                "Miscellaneous small garbage cleanups and performance improvements."
+            );
             enableEcsSimConfig = Config.Bind(
                 "General",
                 "EnableEcsSimulation",
@@ -91,6 +98,7 @@ namespace TurboMode
             if (shutoffUnusedWindowHierarchies.Value)
                 hooks.AddRange(ShutoffUnusedWindowHierarchies.MakeHooks());
             // BurstMath is handled in prepatcher.
+            // MiscCleanups is handled in prepatcher.
             Application.quitting += BurstifyTransformFrames.DisposeCachedAllocations;
             if (Debug.isDebugBuild)
             {

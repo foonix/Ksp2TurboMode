@@ -34,6 +34,8 @@ namespace TurboMode.Prepatch
         public static void Patch(ref AssemblyDefinition assembly)
         {
             Patch_MessageCenter_RecycleMessage(assembly);
+            CreateGetHashCode(assembly, "KSP.Sim.ResourceSystem.ResourceFlowRequestManager/RequestContainerGroupKey");
+            CreateGetHashCode(assembly, "KSP.Sim.ResourceSystem.ResourceFlowRequestManager/RequestPriorityContainerGroupKey");
         }
 
         private static void Patch_MessageCenter_RecycleMessage(AssemblyDefinition assembly)
@@ -56,6 +58,56 @@ namespace TurboMode.Prepatch
             );
             cursor.Remove();
             cursor.Emit(OpCodes.Call, replacement);
+        }
+
+        private static void CreateGetHashCode(AssemblyDefinition assembly, string typeName)
+        {
+            var targetType = assembly
+                .MainModule.GetType(typeName);
+
+            MethodReference objectGetHashCode = assembly.MainModule.ImportReference(typeof(object).GetMethod("GetHashCode"));
+
+            logSource.LogInfo($"Adding GetHashCode to {targetType}");
+
+            MethodDefinition getHashCode = new(
+                "GetHashCode",
+                MethodAttributes.Virtual | MethodAttributes.Public,
+                assembly.MainModule.ImportReference(typeof(int))
+            );
+
+            var intVar = new VariableDefinition(assembly.MainModule.ImportReference(typeof(int)));
+
+            getHashCode.Body.Variables.Add(intVar);
+
+            ILContext context = new(getHashCode);
+            ILCursor cursor = new(context);
+
+            cursor.Emit(OpCodes.Ldc_I4_0);
+            cursor.Emit(OpCodes.Stloc_0);
+
+            foreach (var field in targetType.Fields)
+            {
+                cursor.Emit(OpCodes.Ldloc_0);
+                cursor.Emit(OpCodes.Ldarg_0);
+
+                if (field.FieldType.IsValueType)
+                {
+                    cursor.Emit(OpCodes.Ldflda, field);
+                    cursor.Emit(OpCodes.Constrained, field.FieldType);
+                }
+                else
+                {
+                    cursor.Emit(OpCodes.Ldfld, field);
+                }
+
+                cursor.Emit(OpCodes.Callvirt, objectGetHashCode);
+                cursor.Emit(OpCodes.Add);
+                cursor.Emit(OpCodes.Stloc_0);
+            }
+            cursor.Emit(OpCodes.Ldloc_0);
+            cursor.Emit(OpCodes.Ret);
+
+            targetType.Methods.Add(getHashCode);
         }
     }
 }

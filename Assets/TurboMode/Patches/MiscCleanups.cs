@@ -1,5 +1,4 @@
 using KSP.Messages;
-using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
 

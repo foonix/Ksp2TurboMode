@@ -1,6 +1,9 @@
 using Mono.Cecil;
 using Mono.Cecil.Cil;
+using Mono.Cecil.Rocks;
 using MonoMod.Cil;
+using MonoMod.Utils;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 
@@ -36,6 +39,8 @@ namespace TurboMode.Prepatch
             Patch_MessageCenter_RecycleMessage(assembly);
             CreateGetHashCode(assembly, "KSP.Sim.ResourceSystem.ResourceFlowRequestManager/RequestContainerGroupKey");
             CreateGetHashCode(assembly, "KSP.Sim.ResourceSystem.ResourceFlowRequestManager/RequestPriorityContainerGroupKey");
+            MakeIEquatable(assembly, "KSP.Sim.ResourceSystem.ResourceFlowRequestManager/RequestContainerGroupKey");
+            MakeIEquatable(assembly, "KSP.Sim.ResourceSystem.ResourceFlowRequestManager/RequestPriorityContainerGroupKey");
         }
 
         private static void Patch_MessageCenter_RecycleMessage(AssemblyDefinition assembly)
@@ -108,6 +113,67 @@ namespace TurboMode.Prepatch
             cursor.Emit(OpCodes.Ret);
 
             targetType.Methods.Add(getHashCode);
+        }
+
+        private static void MakeIEquatable(AssemblyDefinition assembly, string typeName)
+        {
+            var targetType = assembly
+                .MainModule.GetType(typeName);
+
+            // Add IEquatable<T> to the type.
+            // Needed to get Dictionary<K,V> to use our Equals() when the type is used as a key.
+            TypeReference iEquatableType = assembly.MainModule.ImportReference(typeof(IEquatable<>));
+            GenericInstanceType iEquatableOfTargetType = iEquatableType.MakeGenericInstanceType(targetType);
+            InterfaceImplementation iEquatable = new(iEquatableOfTargetType);
+            targetType.Interfaces.Add(iEquatable);
+
+            MethodDefinition equals = new(
+                "Equals",
+                MethodAttributes.Public | MethodAttributes.Final | MethodAttributes.HideBySig | MethodAttributes.Virtual | MethodAttributes.NewSlot,
+                assembly.MainModule.ImportReference(typeof(bool))
+            );
+
+            // create "other" parameter
+            ParameterDefinition otherParam = new("other", ParameterAttributes.None, targetType);
+            equals.Parameters.Add(otherParam);
+            // bool var to aggregate comparisons
+            var boolVar = new VariableDefinition(assembly.MainModule.ImportReference(typeof(bool)));
+            equals.Body.Variables.Add(boolVar);
+
+            ILContext context = new(equals);
+            ILCursor cursor = new(context);
+
+            // initialize bool var
+            cursor.Emit(OpCodes.Ldc_I4_1);
+            cursor.Emit(OpCodes.Stloc_0);
+
+            foreach (var field in targetType.Fields)
+            {
+                cursor.Emit(OpCodes.Ldloc_0);
+                cursor.Emit(OpCodes.Ldarg_0);
+                cursor.Emit(OpCodes.Ldfld, field);
+                cursor.Emit(OpCodes.Ldarg_1);
+                cursor.Emit(OpCodes.Ldfld, field);
+                if (field.FieldType.IsValueType)
+                {
+                    // Weird, but have to make sure both the type and the method are imported.
+                    var equalsOperatorDef = assembly.MainModule.ImportReference(field.FieldType).Resolve().FindMethod("op_Equality");
+                    var equalsOperator = assembly.MainModule.ImportReference(equalsOperatorDef);
+                    cursor.Emit(OpCodes.Call, equalsOperator);
+                }
+                else
+                {
+                    cursor.Emit(OpCodes.Ceq);
+                }
+                cursor.Emit(OpCodes.And);
+                cursor.Emit(OpCodes.Stloc_0);
+            }
+
+            cursor.Emit(OpCodes.Ldloc_0);
+            cursor.Emit(OpCodes.Ret);
+
+            targetType.Methods.Add(equals);
+            logSource.LogInfo($"Created {equals}");
         }
     }
 }

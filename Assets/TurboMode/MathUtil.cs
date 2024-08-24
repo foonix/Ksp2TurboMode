@@ -58,5 +58,14 @@ namespace TurboMode
             }
             result = new Matrix4x4D(combined);
         }
+
+        [BurstCompile]
+        public static void CreateTrsMatrices(
+            in Vector3d localPosition, in QuaternionD localRotation,
+            ref Matrix4x4D localMatrix, ref Matrix4x4D localMatrixInverse)
+        {
+            localMatrix = Matrix4x4D.TRS(localPosition, localRotation);
+            localMatrixInverse = localMatrix.GetInverse();
+        }
     }
 }

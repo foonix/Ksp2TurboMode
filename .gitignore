@@ -88,6 +88,7 @@ Assets/BuildReports*
 .vs/
 
 UserSettings
+ProfileAnalyzer
 
 # Build artifact files that Addressables likes to chuck into Assets for some reason.
 # These would need to be saved if we were serving Asset Bundle updates over the wire,

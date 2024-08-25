@@ -9,7 +9,8 @@
     "precompiledReferences": [
         "BepInEx.dll",
         "Mono.Cecil.dll",
-        "MonoMod.Utils.dll"
+        "MonoMod.Utils.dll",
+        "Mono.Cecil.Rocks.dll"
     ],
     "autoReferenced": false,
     "defineConstraints": [],

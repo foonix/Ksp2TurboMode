@@ -27,7 +27,7 @@ Please report any issues either on github `issues`, or feel free to ping me on d
 - Open this project in Unity 2022.3.5f1.
 - (One time) Configure ThunderKit to point to your KSP2 installation directory, and run the importer.
   Note: TurboMode assemblies will have errors until the import is complete.
-- Build with one of the build menus under Tools -> TubroMode
+- Build with one of the build menus under Tools -> TurboMode
   The build output will go directly to your KSP2 installation under `BepInEx/plugins/TurboMode`.
 
 License: MIT

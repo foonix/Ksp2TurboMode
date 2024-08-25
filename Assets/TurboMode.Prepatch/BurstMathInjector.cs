@@ -1,14 +1,10 @@
-using BepInEx;
-using BepInEx.Configuration;
-using BepInEx.Logging;
 using Mono.Cecil;
 using Mono.Cecil.Cil;
 using MonoMod.Cil;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 
-namespace TurboMode
+namespace TurboMode.Prepatch
 {
     /// <summary>
     /// Various Matrix4x4D operations can happen 10k+ times per frame, so even 0.001ms overhead from IL hooks or 
@@ -16,13 +12,9 @@ namespace TurboMode
     /// Zero-overhead modification to make this work.
     /// So we directly patch the callers' IL with Cecil.
     /// </summary>
-    public class BurstMathInjector
+    public class BurstMathInjector : TurboModePrepatch
     {
         static bool enabled;
-
-        static ConfigFile config;
-        static ManualLogSource logSource;
-        static AssemblyDefinition tmAssembly;
 
         static MethodReference transformPoint;
         static MethodReference transformVector;
@@ -31,15 +23,7 @@ namespace TurboMode
 
         public static void Initialize()
         {
-            logSource = Logger.CreateLogSource("TurboMode.Preload");
-            logSource.LogInfo("BurstMath Initialize()");
-
-            var configPath = Utility.CombinePaths(Paths.ConfigPath, "TurboMode.cfg");
-            config = new ConfigFile(configPath, saveOnInit: false)
-            {
-                // We have to Bind() here to get the value, but avoid writing because we don't have all of the settings.
-                SaveOnConfigSet = false
-            };
+            InitSharedResources();
 
             // Can't get this from TurboModePlugin, because we must avoid loading Assembly-CSharp.dll.
             enabled = config.Bind(
@@ -58,18 +42,11 @@ namespace TurboMode
 
         public static void Finish()
         {
-            // free up unused
-            config = null;
-            logSource = null;
-            tmAssembly = null;
+            CleanupSharedResources();
         }
 
         public static void Patch(ref AssemblyDefinition assembly)
         {
-            // Get our main assembly signatures without actually loading it.
-            var thisAsmPath = typeof(BurstMathInjector).Assembly.Location;
-            tmAssembly = AssemblyDefinition.ReadAssembly(Path.Combine(Path.GetDirectoryName(thisAsmPath), "..", "plugins", "TurboMode", "TurboMode.dll"));
-
             transformPoint = assembly.MainModule.ImportReference(tmAssembly
                 .MainModule.GetType("TurboMode.MathUtil")
                 .Methods.First(method => method.Name == "TransformPoint")
@@ -96,6 +73,7 @@ namespace TurboMode
             );
 
             Patch_PartBehavior_IWaterDetectObject(assembly);
+            Patch_TransformFrame_RecalculateLocalMatricies(assembly);
         }
 
         private static void PatchComputeTransformFromOtherCaller(
@@ -188,6 +166,44 @@ namespace TurboMode
             cursor.Index++; // keep stloc.s 16.
             cursor.Emit(OpCodes.Ldloca_S, (byte)16); // operate on the storage in-place.
             cursor.Emit(OpCodes.Call, transformPoint);
+        }
+
+        private static void Patch_TransformFrame_RecalculateLocalMatricies(AssemblyDefinition assembly)
+        {
+            var transformFrameType = assembly.MainModule.GetType("KSP.Sim.impl.TransformFrame");
+            var targetMethod = transformFrameType
+                .Methods.First(method => method.Name == "RecalculateLocalMatricies");
+
+            var initTrs = assembly.MainModule.ImportReference(tmAssembly
+                .MainModule.GetType("TurboMode.MathUtil")
+                .Methods.First(method => method.Name == "CreateTrsMatrices")
+            );
+
+            var _localMatrix = transformFrameType.Fields.First(f => f.Name == "_localMatrix");
+            var _localMatrixInverse = transformFrameType.Fields.First(f => f.Name == "_localMatrixInverse");
+
+            var vectorVar = new VariableDefinition(assembly.MainModule.GetType("Vector3d"));
+            targetMethod.Body.Variables.Add(vectorVar); // local 0
+            var quaternionVar = new VariableDefinition(assembly.MainModule.GetType("QuaternionD"));
+            targetMethod.Body.Variables.Add(quaternionVar); // local 1
+
+            ILContext context = new(targetMethod);
+            ILCursor cursor = new(context);
+
+            cursor.Remove(); // ldarg.0 for later _localMatrix stfld we are replacing
+
+            cursor.GotoNext(x => x.MatchCallOrCallvirt("Matrix4x4D", "TRS"));
+            cursor.RemoveRange(7); // up to clearing the dirty flag
+            // local position/rotation are values on the stack at this point
+            cursor.Emit(OpCodes.Stloc_1); // QuaternionD localRotation
+            cursor.Emit(OpCodes.Stloc_0); // Vector3d localPosition
+            cursor.Emit(OpCodes.Ldloca_S, (byte)0);
+            cursor.Emit(OpCodes.Ldloca_S, (byte)1);
+            cursor.Emit(OpCodes.Ldarg_0);
+            cursor.Emit(OpCodes.Ldflda, _localMatrix);
+            cursor.Emit(OpCodes.Ldarg_0);
+            cursor.Emit(OpCodes.Ldflda, _localMatrixInverse);
+            cursor.Emit(OpCodes.Call, initTrs);
         }
     }
 }

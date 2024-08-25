@@ -56,7 +56,7 @@ namespace TurboMode
 #nullable enable
         // This is the fastest way to invoke or enumerate events I've found.
         // https://stackoverflow.com/a/71053418
-        public class EventHelper<TClass, TDelegate> where TDelegate : Delegate
+        public readonly struct EventHelper<TClass, TDelegate> where TDelegate : Delegate
         {
             public EventHelper(string eventName)
             {
@@ -87,7 +87,7 @@ namespace TurboMode
         // Zero garbage private field get/set
         // Faster than reflection to boot.
         // https://stackoverflow.com/questions/16073091/is-there-a-way-to-create-a-delegate-to-get-and-set-values-for-a-fieldinfo
-        public class FieldHelper<S, T>
+        public struct FieldHelper<S, T>
         {
             public Func<S, T> Get;
             public Action<S, T> Set;
@@ -134,6 +134,49 @@ namespace TurboMode
                 }
                 gen.Emit(OpCodes.Ret);
                 return (Action<S, T>)setterMethod.CreateDelegate(typeof(Action<S, T>));
+            }
+        }
+
+        /// <summary>
+        /// A delegate that resets all fields on a specific subclass of supertype T.
+        /// </summary>
+        public struct ClassClearer<T> where T: class
+        {
+            public Action<T> Clear;
+
+            /// <summary>
+            /// Create the delegate using supplied subclass type
+            /// </summary>
+            /// <param name="type">The specific subclass</param>
+            /// <returns></returns>
+            public static ClassClearer<T> Create(Type type)
+            {
+                string methodName = type.FullName + ".Clear";
+                DynamicMethod setterMethod = new(methodName, null, new Type[] { typeof(T) }, true);
+                ILGenerator gen = setterMethod.GetILGenerator();
+
+                foreach (var field in type.GetFields(BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic))
+                {
+                    if(field.FieldType.IsValueType)
+                    {
+                        gen.Emit(OpCodes.Ldarg_0);
+                        gen.Emit(OpCodes.Ldflda, field);
+                        gen.Emit(OpCodes.Initobj, field.FieldType);
+                    }
+
+                    if (field.FieldType.IsClass)
+                    {
+                        gen.Emit(OpCodes.Ldarg_0);
+                        gen.Emit(OpCodes.Ldnull);
+                        gen.Emit(OpCodes.Stfld, field);
+                    }
+                }
+                gen.Emit(OpCodes.Ret);
+
+                return new ClassClearer<T>()
+                {
+                    Clear = (Action<T>)setterMethod.CreateDelegate(typeof(Action<T>)),
+                };
             }
         }
     }

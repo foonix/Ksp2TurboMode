@@ -127,9 +127,9 @@ namespace TurboMode.Sim.Systems
 
                     var rbb = rbView.Rigidbody;
                     s_RbbFixedUpdate.Begin(rbb);
-                    UpdateRbForces(rbb, sim.UniverseModel, vessel);
+                    //UpdateRbForces(rbb, sim.UniverseModel, vessel);
                     _isHandCorrectionCheckPendingField.Set(rbb, false);
-                    VesselUpdateCom(sim.UniverseView.PhysicsSpace, rbView, rbb);
+                    //RefactorRigidbodyBehavior.VesselUpdateCom(sim.UniverseView.PhysicsSpace, rbView, rbb);
                     s_RbbFixedUpdate.End();
                 })
                 .WithoutBurst()
@@ -177,18 +177,6 @@ namespace TurboMode.Sim.Systems
             var vesselBehavior = rbb.ViewObject.Vessel;
             var rbbIsEnabled = rbb.enabled;
             var gravity = vessel.gravityAtCurrentLocation;
-            PartOwnerBehavior owner;
-
-            if (part)
-            {
-                owner = rbb.ViewObject.Part.partOwner;
-            }
-            else
-            {
-                owner = rbb.ViewObject.PartOwner;
-            }
-
-            RefactorRigidbodyBehavior._ownerBehaviorField.Set(rbb, owner);
 
             // redo of hand correction code in RigidbodyBehaviorOnUpdate()
             //if (rbb.PhysicsMode != PartPhysicsModes.None && (vessel.flags | Vessel.Flags.IsHandOfKrakenCorrectingOrbit) > 0
@@ -414,25 +402,6 @@ namespace TurboMode.Sim.Systems
                 _isUnscaledInertiaTensorInitialized = false;
             }
             */
-        }
-
-        public static void VesselUpdateCom(IPhysicsSpaceProvider physicsSpace, SimulationObjectView view, RigidbodyBehavior rbb)
-        {
-            //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-            OrbiterComponent orbiter = rbb.SimObjectComponent.SimulationObject.Orbiter;
-            //if (view.PartOwner.IsHandOfKrakenCorrectingOrbit)
-            //{
-            //    orbiter.PatchedOrbit.UpdateFromUT(rbb.Game.UniverseModel.UniverseTime);
-            //    view.PartOwner.Model.CenterOfMass = orbiter.Position;
-            //    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
-            //    return;
-            //}
-            view.PartOwner.GetMassAverages(out var averageCenterOfMass, out var averageVelocity);
-            Position newPosition = physicsSpace.PhysicsToPosition(averageCenterOfMass);
-            Velocity newVelocity = physicsSpace.PhysicsToVelocity(averageVelocity);
-            orbiter.UpdateFromStateVectors(newPosition, newVelocity);
-            view.PartOwner.Model.CenterOfMass = newPosition;
-            //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
         }
     }
 }

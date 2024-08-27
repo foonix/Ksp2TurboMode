@@ -103,6 +103,8 @@ namespace TurboMode.Patches
                         angularVelocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity));
                         SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
                     }
+
+                    //VesselUpdateCom(physicsSpace, _viewObject, rbb);
                 }
 
                 return;
@@ -308,6 +310,27 @@ namespace TurboMode.Patches
                 angularVelocityUpdatedHelper.Get(rbb)?.Invoke(rbb.AngularVelocity);
                 rbb.Model.inertiaTensor = physicsSpace.PhysicsToVector(activeRigidBody.inertiaTensor);
             }
+        }
+
+
+
+        public static void VesselUpdateCom(IPhysicsSpaceProvider physicsSpace, SimulationObjectView view, RigidbodyBehavior rbb)
+        {
+            //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+            OrbiterComponent orbiter = rbb.SimObjectComponent.SimulationObject.Orbiter;
+            //if (view.PartOwner.IsHandOfKrakenCorrectingOrbit)
+            //{
+            //    orbiter.PatchedOrbit.UpdateFromUT(rbb.Game.UniverseModel.UniverseTime);
+            //    view.PartOwner.Model.CenterOfMass = orbiter.Position;
+            //    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+            //    return;
+            //}
+            view.PartOwner.GetMassAverages(out var averageCenterOfMass, out var averageVelocity);
+            Position newPosition = physicsSpace.PhysicsToPosition(averageCenterOfMass);
+            Velocity newVelocity = physicsSpace.PhysicsToVelocity(averageVelocity);
+            orbiter.UpdateFromStateVectors(newPosition, newVelocity);
+            view.PartOwner.Model.CenterOfMass = newPosition;
+            //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
         }
     }
 }

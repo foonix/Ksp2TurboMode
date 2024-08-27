@@ -89,19 +89,20 @@ namespace TurboMode.Patches
                     SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
                     // For purposes I've found so far, the velocity information from
-                    // the previous FixedUpdate() is "close enough"
-                    //if (rbb.IsPhysXActive || activeRigidBody)
-                    //{
-                    //rbVelocity = activeRigidBody.velocity;
-                    //rbAngularVelocity = activeRigidBody.angularVelocity;
-                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-                    //velocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToVelocity(rbVelocity));
-                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+                    // the previous FixedUpdate() is "close enough" for part data
+                    // landed/launchpad vessels will explode on load without it.
+                    if (rbb.IsPhysXActive || activeRigidBody)
+                    {
+                        rbVelocity = activeRigidBody.velocity;
+                        rbAngularVelocity = activeRigidBody.angularVelocity;
+                        SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+                        velocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToVelocity(rbVelocity));
+                        SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
 
-                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
-                    //angularVelocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity));
-                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
-                    //}
+                        SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+                        angularVelocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity));
+                        SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+                    }
                 }
 
                 return;

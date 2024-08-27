@@ -2,6 +2,7 @@ using KSP.Game;
 using KSP.Sim;
 using KSP.Sim.impl;
 using MonoMod.RuntimeDetour;
+using RTG;
 using System;
 using System.Reflection;
 using TurboMode.Patches;
@@ -43,6 +44,8 @@ namespace TurboMode.Sim.Systems
             = new(typeof(PartComponent).GetField("greenMass", BindingFlags.NonPublic | BindingFlags.Instance));
         private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partResourceMass
             = new(typeof(PartComponent).GetField("resourceMass", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partPhysicsMass
+            = new(typeof(PartComponent).GetField("physicsMass", BindingFlags.NonPublic | BindingFlags.Instance));
 
         static ComponentLookup<Vessel> vesselLookup;
 
@@ -65,10 +68,11 @@ namespace TurboMode.Sim.Systems
             Entities
                 .WithName("WritePartMass")
                 .ForEach(
-                (ref Part part, in SimObject simObj) =>
+                (in Part part, in Components.RigidbodyComponent rbc, in SimObject simObj) =>
                 {
                     var partComponent = simObj.inUniverse.Part;
-                    partMassField.Set(partComponent, part.dryMass);
+                    partMassField.Set(partComponent, rbc.effectiveMass);
+                    partPhysicsMass.Set(partComponent, rbc.effectiveMass);
                     partGreenMassField.Set(partComponent, part.greenMass);
                     partResourceMass.Set(partComponent, part.wetMass);
                 })
@@ -76,7 +80,7 @@ namespace TurboMode.Sim.Systems
                 .Run();
 
             Entities
-                .WithName("UpdateVesselGravity")
+                .WithName("ReadVesselData")
                 .ForEach(
                 (ref Vessel vessel, in SimObject simObj) =>
                 {
@@ -85,6 +89,19 @@ namespace TurboMode.Sim.Systems
                     if (vesselObj.objVesselBehavior)
                     {
                         vessel.gravityAtCurrentLocation = vesselObj.objVesselBehavior.PartOwner.GetGravityForceAtCurrentPosition();
+
+                        Vessel.Flags flags = default;
+                        if (vesselObj.objVesselBehavior.PartOwner.IsHandOfKrakenCorrectingOrbit)
+                        {
+                            flags |= Vessel.Flags.IsHandOfKrakenCorrectingOrbit;
+                        }
+                        vessel.flags = flags;
+
+                        HandOfKraken handOfKraken = vesselObj.objVesselBehavior.PartOwner.GetField<PartOwnerBehavior, HandOfKraken>("_handOfKraken");
+                        handOfKraken.CallPrivateVoidMethod("Unregister");
+
+                        handOfKraken.OnFixedUpdate(UnityEngine.Time.fixedDeltaTime);
+                        //handOfKraken.OnUpdate(0);
                     }
                     // TODO: drive whatever is running the vessel mass update
                 })
@@ -92,7 +109,35 @@ namespace TurboMode.Sim.Systems
                 .Run();
 
             Entities
+                .WithName("UpdateRbForcesVessel")
+                .ForEach(
+                (ref Components.RigidbodyComponent rbc, in Vessel vessel, in SimObject simObj) =>
+                {
+                    //var vessel = vesselLookup[simObj.owner];
+                    rbc.accelerations = vessel.gravityAtCurrentLocation;
+
+                    var rbObj = simObj.inUniverse;
+                    var sim = GameManager.Instance.Game.SpaceSimulation;
+                    var rbView = sim.ModelViewMap.FromModel(rbObj);
+
+                    if (!rbView || !rbView.Rigidbody /*|| (!rbView.Rigidbody.activeRigidBody && rbObj.Vessel == null)*/ )
+                    {
+                        return;
+                    }
+
+                    var rbb = rbView.Rigidbody;
+                    s_RbbFixedUpdate.Begin(rbb);
+                    UpdateRbForces(rbb, sim.UniverseModel, vessel);
+                    _isHandCorrectionCheckPendingField.Set(rbb, false);
+                    VesselUpdateCom(sim.UniverseView.PhysicsSpace, rbView, rbb);
+                    s_RbbFixedUpdate.End();
+                })
+                .WithoutBurst()
+                .Run();
+
+            Entities
                 .WithName("UpdateRbForces")
+                .WithAbsent<Vessel>()
                 .ForEach(
                 (ref Components.RigidbodyComponent rbc, in SimObject simObj) =>
                 {
@@ -103,15 +148,15 @@ namespace TurboMode.Sim.Systems
                     var sim = GameManager.Instance.Game.SpaceSimulation;
                     var rbView = sim.ModelViewMap.FromModel(rbObj);
 
-                    if (!rbView || !rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
+                    if (!rbView || !rbView.Rigidbody /*|| (!rbView.Rigidbody.activeRigidBody && rbObj.Vessel == null)*/ )
                     {
                         return;
                     }
 
                     var rbb = rbView.Rigidbody;
                     s_RbbFixedUpdate.Begin(rbb);
-                    UpdateRbForces(rbb, sim.UniverseModel, rbc.accelerations);
-                    _isHandCorrectionCheckPendingField.Set(rbb, true);
+                    UpdateRbForces(rbb, sim.UniverseModel, vessel);
+                    _isHandCorrectionCheckPendingField.Set(rbb, false);
                     s_RbbFixedUpdate.End();
                 })
                 .WithoutBurst()
@@ -123,17 +168,54 @@ namespace TurboMode.Sim.Systems
         // So just do obvious optimizations like moving inner loop stuff out for now.
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, bool> _isHandCorrectionCheckPendingField
             = new(typeof(RigidbodyBehavior).GetField("_isHandCorrectionCheckPending", BindingFlags.NonPublic | BindingFlags.Instance));
-        private static void UpdateRbForces(RigidbodyBehavior rbb, UniverseModel universeModel, Vector3d gravity)
+        private static void UpdateRbForces(RigidbodyBehavior rbb, UniverseModel universeModel, in Vessel vessel)
         {
             var model = rbb.Model;
             var activeRigidBody = rbb.activeRigidBody;
             var localToWorldMatrix = rbb.transform.localToWorldMatrix;
             var part = rbb.ViewObject.Part;
-            var vessel = rbb.ViewObject.Vessel;
+            var vesselBehavior = rbb.ViewObject.Vessel;
             var rbbIsEnabled = rbb.enabled;
+            var gravity = vessel.gravityAtCurrentLocation;
+            PartOwnerBehavior owner;
+
+            if (part)
+            {
+                owner = rbb.ViewObject.Part.partOwner;
+            }
+            else
+            {
+                owner = rbb.ViewObject.PartOwner;
+            }
+
+            RefactorRigidbodyBehavior._ownerBehaviorField.Set(rbb, owner);
+
+            // redo of hand correction code in RigidbodyBehaviorOnUpdate()
+            //if (rbb.PhysicsMode != PartPhysicsModes.None && (vessel.flags | Vessel.Flags.IsHandOfKrakenCorrectingOrbit) > 0
+            //    /*&& part*/ && activeRigidBody)
+            //{
+            //    IPhysicsSpaceProvider physicsSpace = rbb.ViewObject.Universe.PhysicsSpace;
+
+            //    // for a first go at this, I want to try not doing the dance with the vessel updating the root part
+            //    // and the root part not updating its self.
+            //    Vector3d targetPos = physicsSpace.PositionToPhysics(owner.HandOfKrakenExpectedPos)
+            //        - (physicsSpace.PositionToPhysics(owner.Model.CenterOfMass)
+            //        - physicsSpace.PositionToPhysics(rbb.Model.Position));
+            //    Vector3d targetVelocity = physicsSpace.VelocityToPhysics(owner.HandOfKrakenExpectedVel, owner.HandOfKrakenExpectedPos);
+            //    Vector3 currentVelocityRelative = activeRigidBody.velocity - owner.HandOfKrakenStartOfUpdateVel;
+            //    targetVelocity += currentVelocityRelative;
+
+            //    rbb.transform.position = targetPos;
+            //    activeRigidBody.velocity = targetVelocity;
+            //}
 
             if (rbbIsEnabled)
-                RefactorRigidbodyBehavior.UpdateToSimObject(rbb);
+                RefactorRigidbodyBehavior.UpdateToSimObject(rbb, activeRigidBody);
+
+            if (!activeRigidBody)
+            {
+                return;
+            }
 
             Physics.autoSyncTransforms = false;
             if (Math.Abs(rbb.mass - model.mass) > PhysicsSettings.PHYSX_MASS_TOLERANCE)
@@ -209,9 +291,9 @@ namespace TurboMode.Sim.Systems
                         num3 = part.Model.dynamicPressurekPa * 0.0098692326671601278;
                     }
                 }
-                else if (vessel)
+                else if (vesselBehavior)
                 {
-                    num3 = vessel.Model.DynamicPressure_kPa * 0.0098692326671601278;
+                    num3 = vesselBehavior.Model.DynamicPressure_kPa * 0.0098692326671601278;
                 }
                 else
                 {
@@ -332,6 +414,25 @@ namespace TurboMode.Sim.Systems
                 _isUnscaledInertiaTensorInitialized = false;
             }
             */
+        }
+
+        public static void VesselUpdateCom(IPhysicsSpaceProvider physicsSpace, SimulationObjectView view, RigidbodyBehavior rbb)
+        {
+            //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+            OrbiterComponent orbiter = rbb.SimObjectComponent.SimulationObject.Orbiter;
+            //if (view.PartOwner.IsHandOfKrakenCorrectingOrbit)
+            //{
+            //    orbiter.PatchedOrbit.UpdateFromUT(rbb.Game.UniverseModel.UniverseTime);
+            //    view.PartOwner.Model.CenterOfMass = orbiter.Position;
+            //    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+            //    return;
+            //}
+            view.PartOwner.GetMassAverages(out var averageCenterOfMass, out var averageVelocity);
+            Position newPosition = physicsSpace.PhysicsToPosition(averageCenterOfMass);
+            Velocity newVelocity = physicsSpace.PhysicsToVelocity(averageVelocity);
+            orbiter.UpdateFromStateVectors(newPosition, newVelocity);
+            view.PartOwner.Model.CenterOfMass = newPosition;
+            //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
         }
     }
 }

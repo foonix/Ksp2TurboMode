@@ -12,7 +12,7 @@ namespace TurboMode.Patches
         private static readonly ProfilerMarker SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents = new("SelectivePhysicsAutoSync.RigidbodyBehaviorOnUpdateEvents");
 
         // private fields
-        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, PartOwnerBehavior> _ownerBehaviorField
+        public static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, PartOwnerBehavior> _ownerBehaviorField
             = new(typeof(RigidbodyBehavior).GetField("_ownerBehavior", BindingFlags.NonPublic | BindingFlags.Instance));
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, bool> _isHandCorrectionCheckPendingField
             = new(typeof(RigidbodyBehavior).GetField("_isHandCorrectionCheckPending", BindingFlags.NonPublic | BindingFlags.Instance));
@@ -34,6 +34,14 @@ namespace TurboMode.Patches
         public static void RigidbodyBehaviorOnUpdate(Action<object, float> orig, RigidbodyBehavior rbb, float deltaTime)
 #pragma warning restore IDE0060 // Remove unused parameter
         {
+
+            var _viewObject = rbb.ViewObject;
+            var activeRigidBody = rbb.activeRigidBody;
+            IPhysicsSpaceProvider physicsSpace = _viewObject.Universe.PhysicsSpace;
+
+            bool isPart = _viewObject.Part;
+
+            // trying to remove this when using the ecs model.
             if (!rbb.enabled || !rbb.IsPhysXPositioned)
             {
                 return;
@@ -42,26 +50,65 @@ namespace TurboMode.Patches
             // Note that syncs to the physics engine may be pending when this is set.
             // We're not guaranteed to have coherant Rigidbody.postion == Transform.position
             // even if the transform was changed while this was `true`.
-            Physics.autoSyncTransforms = false;
-
-            var _viewObject = rbb.ViewObject;
-            var _physicsMode = rbb.PhysicsMode;
-            var _ownerBehavior = _ownerBehaviorField.Get(rbb);
-            var _isHandCorrectionCheckPending = _isHandCorrectionCheckPendingField.Get(rbb);
-            var activeRigidBody = rbb.activeRigidBody;
-            IPhysicsSpaceProvider physicsSpace = _viewObject.Universe.PhysicsSpace;
+            //Physics.autoSyncTransforms = false;
 
             Vector3 rbPosition;
             Quaternion rbRotation;
             Vector3 rbVelocity;
             Vector3 rbAngularVelocity;
 
-            bool setPos = false;
-            bool isVessel = _viewObject.PartOwner;
-            bool isPart = _viewObject.Part;
-            Transform controlledTransform = null;
+            if (TurboModePlugin.enableEcsSim)
+            {
+                // Parts are spawned during Update(), but the sim looks for orphaned parts during LateUpdate().
+                // If _ownerBehavior is null, it runs the physical part promotion,
+                // which has the side effect of severing joints.
+                // So we must copy the owner reference here (especially for newly spawned parts) to prevent that.
+                if (isPart)
+                {
+                    var owner = _viewObject.Part.partOwner;
+                    _ownerBehaviorField.Set(rbb, owner);
+                }
+                //else
+                //{
+                //    var owner = _viewObject.PartOwner;
+                //    _ownerBehaviorField.Set(rbb, owner);
+                //}
+
+                // vessel position needs to be broadcast during Updaet() for some things like the camera centering
+                // and SAS to work porperly.
+                if (!isPart)
+                {
+                    activeRigidBody.transform.GetPositionAndRotation(out rbPosition, out rbRotation);
+
+                    SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+                    positionUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToPosition(rbPosition));
+                    SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+
+                    SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+                    rotationUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToRotation(rbRotation));
+                    SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+
+                    // For purposes I've found so far, the velocity information from
+                    // the previous FixedUpdate() is "close enough"
+                    //if (rbb.IsPhysXActive || activeRigidBody)
+                    //{
+                    //rbVelocity = activeRigidBody.velocity;
+                    //rbAngularVelocity = activeRigidBody.angularVelocity;
+                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+                    //velocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToVelocity(rbVelocity));
+                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+
+                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.Begin(rbb);
+                    //angularVelocityUpdatedHelper.Get(rbb)?.Invoke(physicsSpace.PhysicsToAngularVelocity(rbAngularVelocity));
+                    //SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents.End();
+                    //}
+                }
+
+                return;
+            }
 
             // get current data
+            Transform controlledTransform = null;
             if (rbb.IsPhysXActive)
             {
                 // Read the transform here because we won't see changes
@@ -88,6 +135,11 @@ namespace TurboMode.Patches
             }
 
             // determine if we're manually moving or not, and calculate new positions if we are.
+            var _physicsMode = rbb.PhysicsMode;
+            var _isHandCorrectionCheckPending = _isHandCorrectionCheckPendingField.Get(rbb);
+            var _ownerBehavior = _ownerBehaviorField.Get(rbb);
+            bool setPos = false;
+            bool isVessel = _viewObject.PartOwner;
             if (_physicsMode == PartPhysicsModes.None)
             {
                 _isHandCorrectionCheckPending = false;
@@ -141,7 +193,7 @@ namespace TurboMode.Patches
                             setPos = true;
                         }
                     }
-                    // if not the vessel?
+                    // if not the root part?
                     else if (activeRigidBody != _ownerBehavior.ViewObject.Rigidbody.activeRigidBody)
                     {
                         controlledTransform = rbb.transform;
@@ -220,9 +272,8 @@ namespace TurboMode.Patches
             = new(typeof(RigidbodyBehavior).GetField("<localRotation>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, Vector> relativeVelocityField
             = new(typeof(RigidbodyBehavior).GetField("<relativeVelocity>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
-        public static void UpdateToSimObject(RigidbodyBehavior rbb)
+        public static void UpdateToSimObject(RigidbodyBehavior rbb, Rigidbody activeRigidBody)
         {
-            var activeRigidBody = rbb.activeRigidBody;
             var physicsSpace = rbb.ViewObject.Universe.PhysicsSpace;
             var coordinateSystem = rbb.Model.transform.parent;
             Transform thisUnityTransform = rbb.transform;
@@ -234,24 +285,18 @@ namespace TurboMode.Patches
             localRotationField.Set(rbb, coordinateSystem.ToLocalRotation(rotation));
             if (hasActiveRigidbody)
             {
-                if (rbb.ViewObject.PartOwner == null)
-                {
-                    Velocity otherVelocity = physicsSpace.PhysicsToVelocity(activeRigidBody.velocity);
-                    relativeVelocityField.Set(rbb, rbb.relativeToMotion.ToRelativeVelocity(otherVelocity, rbb.Position));
-                }
-                else
+                if (rbb.ViewObject.PartOwner)
                 {
                     PartOwnerComponent partOwner = rbb.SimObjectComponent.SimulationObject.PartOwner;
                     relativeVelocityField.Set(rbb, rbb.relativeToMotion.ToRelativeVelocity(partOwner.GetVelocityMassAverage(), rbb.Position));
-                }
-                if (rbb.ViewObject.PartOwner == null)
-                {
-                    AngularVelocity otherAngularVelocity = physicsSpace.PhysicsToAngularVelocity(activeRigidBody.angularVelocity);
-                    rbb.relativeAngularVelocity = rbb.relativeToMotion.ToRelativeAngularVelocity(otherAngularVelocity);
+                    rbb.relativeAngularVelocity = rbb.relativeToMotion.ToRelativeAngularVelocity(rbb.Model.SimulationObject.PartOwner.AngularVelocityMassAvg);
                 }
                 else
                 {
-                    rbb.relativeAngularVelocity = rbb.relativeToMotion.ToRelativeAngularVelocity(rbb.Model.SimulationObject.PartOwner.AngularVelocityMassAvg);
+                    Velocity otherVelocity = physicsSpace.PhysicsToVelocity(activeRigidBody.velocity);
+                    relativeVelocityField.Set(rbb, rbb.relativeToMotion.ToRelativeVelocity(otherVelocity, rbb.Position));
+                    AngularVelocity otherAngularVelocity = physicsSpace.PhysicsToAngularVelocity(activeRigidBody.angularVelocity);
+                    rbb.relativeAngularVelocity = rbb.relativeToMotion.ToRelativeAngularVelocity(otherAngularVelocity);
                 }
             }
             positionUpdatedHelper.Get(rbb)?.Invoke(rbb.Position);

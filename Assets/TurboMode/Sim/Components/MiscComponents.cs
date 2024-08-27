@@ -1,4 +1,5 @@
 using KSP.Sim.impl;
+using System;
 using System.Collections.Generic;
 using Unity.Entities;
 
@@ -9,6 +10,13 @@ namespace TurboMode.Sim.Components
     public struct Vessel : IComponentData
     {
         public Vector3d gravityAtCurrentLocation;
+        public Flags flags;
+
+        [Flags]
+        public enum Flags
+        {
+            IsHandOfKrakenCorrectingOrbit = 1,
+        }
     }
 
     public struct Part : IComponentData

@@ -53,6 +53,8 @@ namespace TurboMode.Behaviors
                 });
 
                 messageCenter = gameInstance.Messages;
+                // have to be a child of something that GameManger won't destroy during CoroutineDestroyAll()
+                transform.parent = GameManager.Instance.transform;
                 initialized = true;
             }
             else
@@ -67,18 +69,24 @@ namespace TurboMode.Behaviors
                 }
             }
 
-            // Wait for UniverseSim dependencies during savegame game load.
+            // Wait for UniverseSim dependencies during initial game load.
             // Dispose and re-init UniverseSim on subsequent game reloads.
             if (TurboModePlugin.enableEcsSim && initialized
                 && gameInstance.SpaceSimulation != spaceSim && gameInstance.SpaceSimulation is not null
                 && GameManager.Instance.Game.Parts.IsDataLoaded)
             {
-                universeSim?.Dispose();
-
-                spaceSim = gameInstance.SpaceSimulation;
-                universeSim = new UniverseSim(GameManager.Instance.Game);
-                spaceSimMonitor = new SpaceSimulationMonitor(spaceSim, universeSim);
+                ResetUniverseSim();
             }
+        }
+
+        private void ResetUniverseSim()
+        {
+            Debug.Log("TM: Resetting UniverseSim");
+            universeSim?.Dispose();
+            spaceSim = gameInstance.SpaceSimulation;
+            spaceSimMonitor = null;
+            universeSim = new UniverseSim(GameManager.Instance.Game);
+            spaceSimMonitor = new SpaceSimulationMonitor(spaceSim, universeSim);
         }
 
         private void OnDestroy()

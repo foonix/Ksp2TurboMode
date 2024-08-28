@@ -22,18 +22,15 @@ namespace TurboMode.Sim.Systems
     public partial class RigidbodySystem : SystemBase
     {
 #pragma warning disable IDE0052 // Remove unread private members
-        readonly Hook rbbOnUpdateShutoff = new(
+        readonly Hook rbbOnFixedUpdateShutoff = new(
                 typeof(RigidbodyBehavior).GetMethod("OnFixedUpdate"),
-                (Action<Action<System.Object, float>, RigidbodyBehavior, float>)RbbFixedUpdateShunt
+                (Action<Action<System.Object, float>, IFixedUpdate, float>)SuppressionUtils.FixedUpdateShunt
             );
         readonly Hook partComponentMassUpdateShutoff = new(
                 typeof(PartComponent).GetMethod("UpdateMass"),
-                (Action<Action<object>, object>)VoidShutoff
+                (Action<Action<object>, object>)SuppressionUtils.VoidShutoff
             );
 #pragma warning restore IDE0052 // Remove unread private members
-
-        public static void RbbFixedUpdateShunt(Action<object, float> orig, RigidbodyBehavior rbb, float deltaTime) { }
-        public static void VoidShutoff(Action<object> orig, object origObject) { }
 
         private static readonly ProfilerMarker s_RbbFixedUpdate = new("RigidbodySystem RigidbodyBehavior.FixedUpdate()");
 

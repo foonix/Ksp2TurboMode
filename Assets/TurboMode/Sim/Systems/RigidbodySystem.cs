@@ -95,7 +95,33 @@ namespace TurboMode.Sim.Systems
                 .Run();
 
             Entities
+                .WithName("UpdateRbForcesVessel")
+                .ForEach(
+                (ref Components.RigidbodyComponent rbc, in Vessel vessel, in SimObject simObj) =>
+                {
+                    rbc.accelerations = vessel.gravityAtCurrentLocation;
+
+                    var rbObj = simObj.inUniverse;
+                    var sim = GameManager.Instance.Game.SpaceSimulation;
+                    var rbView = sim.ModelViewMap.FromModel(rbObj);
+
+                    if (!rbView || !rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
+                    {
+                        return;
+                    }
+
+                    var rbb = rbView.Rigidbody;
+                    s_RbbFixedUpdate.Begin(rbb);
+                    UpdateRbForces(rbb, sim.UniverseModel, rbc.accelerations);
+                    _isHandCorrectionCheckPendingField.Set(rbb, true);
+                    s_RbbFixedUpdate.End();
+                })
+                .WithoutBurst()
+                .Run();
+
+            Entities
                 .WithName("UpdateRbForces")
+                .WithAbsent<Vessel>()
                 .ForEach(
                 (ref Components.RigidbodyComponent rbc, in SimObject simObj) =>
                 {

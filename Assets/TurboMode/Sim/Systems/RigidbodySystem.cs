@@ -43,6 +43,8 @@ namespace TurboMode.Sim.Systems
             = new(typeof(PartComponent).GetField("greenMass", BindingFlags.NonPublic | BindingFlags.Instance));
         private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partResourceMass
             = new(typeof(PartComponent).GetField("resourceMass", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartComponent, double> partPhysicsMass
+            = new(typeof(PartComponent).GetField("physicsMass", BindingFlags.NonPublic | BindingFlags.Instance));
 
         static ComponentLookup<Vessel> vesselLookup;
 
@@ -65,10 +67,11 @@ namespace TurboMode.Sim.Systems
             Entities
                 .WithName("WritePartMass")
                 .ForEach(
-                (ref Part part, in SimObject simObj) =>
+                (in Part part, in Components.RigidbodyComponent rbc, in SimObject simObj) =>
                 {
                     var partComponent = simObj.inUniverse.Part;
-                    partMassField.Set(partComponent, part.dryMass);
+                    partMassField.Set(partComponent, rbc.effectiveMass);
+                    partPhysicsMass.Set(partComponent, rbc.effectiveMass);
                     partGreenMassField.Set(partComponent, part.greenMass);
                     partResourceMass.Set(partComponent, part.wetMass);
                 })

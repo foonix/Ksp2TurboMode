@@ -47,11 +47,6 @@ namespace TurboMode.Patches
                 return;
             }
 
-            // Note that syncs to the physics engine may be pending when this is set.
-            // We're not guaranteed to have coherant Rigidbody.postion == Transform.position
-            // even if the transform was changed while this was `true`.
-            //Physics.autoSyncTransforms = false;
-
             Vector3 rbPosition;
             Quaternion rbRotation;
             Vector3 rbVelocity;
@@ -109,6 +104,11 @@ namespace TurboMode.Patches
 
                 return;
             }
+
+            // Note that syncs to the physics engine may be pending when this is set.
+            // We're not guaranteed to have coherant Rigidbody.postion == Transform.position
+            // even if the transform was changed while this was `true`.
+            Physics.autoSyncTransforms = false;
 
             // get current data
             Transform controlledTransform = null;

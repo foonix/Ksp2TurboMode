@@ -121,7 +121,7 @@ namespace TurboMode.Sim.Systems
 
                     var rbb = rbView.Rigidbody;
                     s_RbbFixedUpdate.Begin(rbb);
-                    //UpdateRbForces(rbb, sim.UniverseModel, vessel);
+                    UpdateRbForces(rbb, sim.UniverseModel, vessel);
                     //_isHandCorrectionCheckPendingField.Set(rbb, false);
                     //RefactorRigidbodyBehavior.VesselUpdateCom(sim.UniverseView.PhysicsSpace, rbView, rbb);
                     s_RbbFixedUpdate.End();

@@ -154,6 +154,15 @@ namespace TurboMode.Sim
             return entity;
         }
 
+        public void RemoveSimObject(SimulationObjectModel obj)
+        {
+            if (simToEnt.TryGetValue(obj.GlobalId, out var entity))
+            {
+                em.DestroyEntity(entity);
+                simToEnt.Remove(obj.GlobalId);
+            }
+        }
+
         public void AddComponent(Entity entity, ObjectComponent component)
         {
             switch (component)

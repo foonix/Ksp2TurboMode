@@ -40,6 +40,7 @@ namespace TurboMode.Sim
             spaceSim.UniverseModel.onSimulationObjectRemoved += obj =>
             {
                 Debug.Log($"TM: UniversModel: Sim object removed {obj} ({Time.frameCount})");
+                universeSim.RemoveSimObject(obj);
             };
         }
 

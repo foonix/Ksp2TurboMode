@@ -121,10 +121,17 @@ namespace TurboMode.Sim.Systems
                 .ForEach(
                 (ref Components.RigidbodyComponent rbc, in SimObject simObj, in ViewObjectRef viewObj) =>
                 {
-                    var vessel = vesselLookup[simObj.owner];
-                    rbc.accelerations = vessel.gravityAtCurrentLocation;
-
                     var sim = GameManager.Instance.Game.SpaceSimulation;
+                    if (vesselLookup.TryGetComponent(simObj.owner, out var vessel))
+                    {
+                        rbc.accelerations = vessel.gravityAtCurrentLocation;
+                    }
+                    else
+                    {
+                        Position position = simObj.inUniverse.transform.Position;
+                        rbc.accelerations = sim.UniverseView.PhysicsSpace.GetGravityForceAtPosition(position);
+                    }
+
                     var rbView = viewObj.view;
 
                     if (!rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)

@@ -26,8 +26,8 @@ namespace TurboMode.Sim.Systems
                 typeof(RigidbodyBehavior).GetMethod("OnFixedUpdate"),
                 (Action<Action<System.Object, float>, IFixedUpdate, float>)SuppressionUtils.FixedUpdateShunt
             );
-        readonly Hook partComponentMassUpdateShutoff = new(
-                typeof(PartComponent).GetMethod("UpdateMass"),
+        readonly Hook partOwnerComponentUpdateMassStatsShutoff = new(
+                typeof(PartOwnerComponent).GetMethod("UpdateMassStats"),
                 (Action<Action<object>, object>)SuppressionUtils.VoidShutoff
             );
 #pragma warning restore IDE0052 // Remove unread private members
@@ -61,6 +61,10 @@ namespace TurboMode.Sim.Systems
 
             vesselLookup.Update(this);
 
+            // replaces PartOwnerComponent.UpdateMassStats(), which runs once per frame
+            // (dirty flag reset during LateUpdate).  They run out of different call chains
+            // depending on if the vessel has an active RigidbodyBehavior or not, but they always
+            // run at least once during FixedUpdate anyway, so we frontload it here.
             Entities
                 .WithName("WritePartMass")
                 .ForEach(
@@ -71,6 +75,10 @@ namespace TurboMode.Sim.Systems
                     partPhysicsMass.Set(partComponent, rbc.effectiveMass);
                     partGreenMassField.Set(partComponent, part.greenMass);
                     partResourceMass.Set(partComponent, part.wetMass);
+
+                    var rigidbodyComponet = simObj.inUniverse.Rigidbody;
+                    rigidbodyComponet.mass = (float)rbc.effectiveMass;
+                    rigidbodyComponet.centerOfMass = partComponent.CenterOfMass;
                 })
                 .WithoutBurst()
                 .Run();

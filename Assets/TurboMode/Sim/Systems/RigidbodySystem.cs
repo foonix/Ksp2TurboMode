@@ -94,15 +94,14 @@ namespace TurboMode.Sim.Systems
             Entities
                 .WithName("UpdateRbForcesVessel")
                 .ForEach(
-                (ref Components.RigidbodyComponent rbc, in Vessel vessel, in SimObject simObj) =>
+                (ref Components.RigidbodyComponent rbc, in Vessel vessel, in ViewObjectRef viewObj) =>
                 {
                     rbc.accelerations = vessel.gravityAtCurrentLocation;
 
-                    var rbObj = simObj.inUniverse;
                     var sim = GameManager.Instance.Game.SpaceSimulation;
-                    var rbView = sim.ModelViewMap.FromModel(rbObj);
+                    var rbView = viewObj.view;
 
-                    if (!rbView || !rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
+                    if (!rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
                     {
                         return;
                     }
@@ -120,16 +119,15 @@ namespace TurboMode.Sim.Systems
                 .WithName("UpdateRbForces")
                 .WithAbsent<Vessel>()
                 .ForEach(
-                (ref Components.RigidbodyComponent rbc, in SimObject simObj) =>
+                (ref Components.RigidbodyComponent rbc, in SimObject simObj, in ViewObjectRef viewObj) =>
                 {
                     var vessel = vesselLookup[simObj.owner];
                     rbc.accelerations = vessel.gravityAtCurrentLocation;
 
-                    var rbObj = simObj.inUniverse;
                     var sim = GameManager.Instance.Game.SpaceSimulation;
-                    var rbView = sim.ModelViewMap.FromModel(rbObj);
+                    var rbView = viewObj.view;
 
-                    if (!rbView || !rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
+                    if (!rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
                     {
                         return;
                     }

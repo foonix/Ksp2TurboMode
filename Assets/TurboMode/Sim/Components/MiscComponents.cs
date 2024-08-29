@@ -48,6 +48,11 @@ namespace TurboMode.Sim.Components
         }
     }
 
+    public class ViewObjectRef : IComponentData
+    {
+        public SimulationObjectView view;
+    }
+
     public class UniverseRef : IComponentData
     {
         public UniverseModel universeModel;

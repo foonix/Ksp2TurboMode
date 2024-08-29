@@ -1,4 +1,8 @@
+using KSP.Game;
+using KSP.Messages;
 using KSP.Sim.impl;
+using MonoMod.RuntimeDetour;
+using System;
 using System.Collections.Generic;
 using Unity.Entities;
 using UnityEngine;
@@ -8,9 +12,11 @@ namespace TurboMode.Sim
     /// <summary>
     /// Track the game's entity model and triger structural change events into ECS
     /// </summary>
-    public class SpaceSimulationMonitor
+    public class SpaceSimulationMonitor : IDisposable
     {
         private readonly UniverseSim universeSim;
+
+        private Hook onViewObjectDestroyedHook;
 
         public SpaceSimulationMonitor(SpaceSimulation spaceSim, UniverseSim universeSim)
         {
@@ -42,6 +48,27 @@ namespace TurboMode.Sim
                 Debug.Log($"TM: UniversModel: Sim object removed {obj} ({Time.frameCount})");
                 universeSim.RemoveSimObject(obj);
             };
+            GameManager.Instance.Game.Messages.Subscribe<SimulationModelAndViewBoundMessage>(OnViewObjectBound);
+            // There is no callback for when a view object is destroyed or unbound.
+            onViewObjectDestroyedHook = new(
+                typeof(SimulationObjectView).GetMethod("Destroy"),
+                (Action<Action<SimulationObjectView>, SimulationObjectView>)OnViewObjectDestroyed
+            );
+        }
+
+        private void OnViewObjectBound(MessageCenterMessage message)
+        {
+            var boundMessage = (SimulationModelAndViewBoundMessage)message;
+            Debug.Log($"TM: UniversModel: View object bound sim:{boundMessage.SimObjectModel.GlobalId} {boundMessage.SimObjectView.gameObject.name} ({Time.frameCount})");
+            // SimulationObjectView is the only thing that implements ISimulationObjectView.
+            universeSim.AddBoundViewObj(boundMessage.SimObjectModel, (SimulationObjectView)boundMessage.SimObjectView);
+        }
+
+        private void OnViewObjectDestroyed(Action<SimulationObjectView> orig, SimulationObjectView obj)
+        {
+            Debug.Log($"TM: UniversModel: View object destroyed {obj.gameObject.name} ({Time.frameCount})");
+            universeSim.RemoveViewObj(obj);
+            orig(obj);
         }
 
         private class SimComponentMonitor
@@ -92,6 +119,17 @@ namespace TurboMode.Sim
                     universeSim.ChangeOwner(part.GlobalId, entity);
                 }
             }
+        }
+
+        public void Dispose()
+        {
+            onViewObjectDestroyedHook?.Dispose();
+            onViewObjectDestroyedHook = null;
+        }
+
+        ~SpaceSimulationMonitor()
+        {
+            Dispose();
         }
     }
 }

@@ -163,6 +163,31 @@ namespace TurboMode.Sim
             }
         }
 
+        public void AddBoundViewObj(SimulationObjectModel simObj, SimulationObjectView view)
+        {
+            if (simToEnt.TryGetValue(simObj.GlobalId, out var entity))
+            {
+                em.AddComponent<ViewObjectRef>(entity);
+                em.SetComponentData<ViewObjectRef>(entity, new() { view = view });
+            }
+            else
+            {
+                Debug.Log($"TM: View was bound to unknown sim object guid:{simObj}");
+            }
+        }
+
+        public void RemoveViewObj(SimulationObjectView view)
+        {
+            if (simToEnt.TryGetValue(view.Model.GlobalId, out var entity))
+            {
+                em.RemoveComponent<ViewObjectRef>(entity);
+            }
+            else
+            {
+                Debug.Log($"TM: View was destroyed for unknown sim object {view.name} {view.Model?.GlobalId}");
+            }
+        }
+
         public void AddComponent(Entity entity, ObjectComponent component)
         {
             switch (component)

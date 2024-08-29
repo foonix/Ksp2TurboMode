@@ -83,8 +83,8 @@ namespace TurboMode.Behaviors
         {
             Debug.Log("TM: Resetting UniverseSim");
             universeSim?.Dispose();
+            spaceSimMonitor?.Dispose();
             spaceSim = gameInstance.SpaceSimulation;
-            spaceSimMonitor = null;
             universeSim = new UniverseSim(GameManager.Instance.Game);
             spaceSimMonitor = new SpaceSimulationMonitor(spaceSim, universeSim);
         }

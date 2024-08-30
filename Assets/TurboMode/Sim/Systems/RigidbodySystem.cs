@@ -107,14 +107,13 @@ namespace TurboMode.Sim.Systems
                     rbc.accelerations = vessel.gravityAtCurrentLocation;
 
                     var sim = GameManager.Instance.Game.SpaceSimulation;
-                    var rbView = viewObj.view;
+                    var rbb = viewObj.view.Rigidbody;
 
-                    if (!rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
+                    if (!rbb.activeRigidBody)
                     {
                         return;
                     }
 
-                    var rbb = rbView.Rigidbody;
                     s_RbbFixedUpdate.Begin(rbb);
                     UpdateRbForces(rbb, sim.UniverseModel, rbc.accelerations);
                     _isHandCorrectionCheckPendingField.Set(rbb, true);
@@ -140,14 +139,13 @@ namespace TurboMode.Sim.Systems
                         rbc.accelerations = sim.UniverseView.PhysicsSpace.GetGravityForceAtPosition(position);
                     }
 
-                    var rbView = viewObj.view;
+                    var rbb = viewObj.view.Rigidbody;
 
-                    if (!rbView.Rigidbody || !rbView.Rigidbody.activeRigidBody)
+                    if (!rbb.activeRigidBody)
                     {
                         return;
                     }
 
-                    var rbb = rbView.Rigidbody;
                     s_RbbFixedUpdate.Begin(rbb);
                     UpdateRbForces(rbb, sim.UniverseModel, rbc.accelerations);
                     _isHandCorrectionCheckPendingField.Set(rbb, true);

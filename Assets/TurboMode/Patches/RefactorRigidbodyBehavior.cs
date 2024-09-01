@@ -287,88 +287,79 @@ namespace TurboMode.Patches
             }
         }
 
-        // Replacement for the tensor scaling code in RigidbodyBehavior.OnPhysicsUpdate() but with the following revisions:
-        // - Remove dynamic tensor scaling code because it's never turned on
+        // Replacement for the tensor scaling code in RigidbodyBehavior.OnPhysicsUpdate() but with the following simplifications:
+        // - Assume PhysicsSettings.ENABLE_DYNAMIC_TENSOR_SOLUTION == false;
+        // - Assume PhysicsSettings.ENABLE_INERTIA_TENSOR_SCALING == true
         // - Remove some null checks because we're guarding the nulls externally.
         public static void UpdateTesorScale(RigidbodyComponent rbc, RigidbodyBehavior rbb)
         {
             RefactorRigidbodyBehavior_UpdateTesorScale.Begin(rbb);
+            // This is never set, but need to get it because it's serialized field that can affect chosen scale type,
+            // and I haven't proved they're all the same..
             MassScaleType dynamicMassScaleType = (MassScaleType)_dynamicMassScaleType.Get(rbb);
             MassScaleType massScaleType = (MassScaleType)_massScaleType.Get(rbb);
             float massScaleFactor = _massScaleFactor.Get(rbb);
-            float globalTensorScalingOverride = _globalTensorScalingOverride.Get(rbb);
-            bool isUnscaledInertiaTensorInitialized = _isUnscaledInertiaTensorInitialized.Get(rbb);
+            bool isUnscaledInertiaTensorInitialized;
 
             var activeRigidBody = rbb.activeRigidBody;
 
-            if (PhysicsSettings.ENABLE_INERTIA_TENSOR_SCALING)
+            MassScaleType usedMassScaleType = massScaleType;
+            if (usedMassScaleType != dynamicMassScaleType)
             {
-                MassScaleType usedMassScaleType = (PhysicsSettings.ENABLE_DYNAMIC_TENSOR_SOLUTION ? dynamicMassScaleType : massScaleType);
-                if (usedMassScaleType != dynamicMassScaleType && rbc != null)
+                PartComponent partComponent = rbc.SimulationObject.Part;
+                PartOwnerComponent partOwner = partComponent.PartOwner;
+                // part may be orphaned
+                if (partOwner != null && partOwner.PartCount == 1 && partOwner.RootPart == partComponent)
                 {
-                    PartComponent partComponent = rbc.SimulationObject.Part;
-                    if (partComponent != null)
+                    if (rbb.mass <= PhysicsSettings.GLOBAL_LOWMASS_TENSOR_LIMIT)
                     {
-                        PartOwnerComponent partOwner = partComponent.PartOwner;
-                        if (partOwner != null && partOwner.PartCount == 1 && partOwner.RootPart == partComponent)
-                        {
-                            if (rbb.mass <= PhysicsSettings.GLOBAL_LOWMASS_TENSOR_LIMIT)
-                            {
-                                usedMassScaleType = MassScaleType.Explicit;
-                                massScaleFactor = PhysicsSettings.GLOBAL_LOWMASS_TENSOR_SCALAR;
-                            }
-                            else
-                            {
-                                usedMassScaleType = MassScaleType.None;
-                            }
-                        }
+                        usedMassScaleType = MassScaleType.Explicit;
+                        massScaleFactor = PhysicsSettings.GLOBAL_LOWMASS_TENSOR_SCALAR;
+                    }
+                    else
+                    {
+                        usedMassScaleType = MassScaleType.None;
                     }
                 }
-                switch (usedMassScaleType)
-                {
-                    case MassScaleType.InverseMass:
-                        {
-                            float num10 = PhysicsSettings.GLOBAL_TENSOR_SCALAR;
-                            if (!Mathf.Approximately(globalTensorScalingOverride, num10))
-                            {
-                                num10 = globalTensorScalingOverride;
-                            }
-                            massScaleFactor = num10 / activeRigidBody.mass;
-                            ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
-                            break;
-                        }
-                    case MassScaleType.InverseMassDifferential:
-                        {
-                            Joint component2 = rbb.GetComponent<Joint>();
-                            if (component2 != null)
-                            {
-                                Rigidbody connectedBody2 = component2.connectedBody;
-                                if (connectedBody2 != null)
-                                {
-                                    massScaleFactor = connectedBody2.mass / activeRigidBody.mass;
-                                    ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
-                                }
-                            }
-                            else if (isUnscaledInertiaTensorInitialized)
-                            {
-                                ResetInertialTensor(rbb, activeRigidBody);
-                            }
-                            break;
-                        }
-                    case MassScaleType.Explicit:
-                        ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
-                        break;
-                    case MassScaleType.None:
-                        if (isUnscaledInertiaTensorInitialized)
-                        {
-                            ResetInertialTensor(rbb, activeRigidBody);
-                        }
-                        break;
-                }
             }
-            else if (isUnscaledInertiaTensorInitialized)
+            switch (usedMassScaleType)
             {
-                ResetInertialTensor(rbb, activeRigidBody);
+                case MassScaleType.InverseMass:
+                    float globalTensorScalingOverride = _globalTensorScalingOverride.Get(rbb);
+                    float tensorScale = PhysicsSettings.GLOBAL_TENSOR_SCALAR;
+                    if (!Mathf.Approximately(globalTensorScalingOverride, tensorScale))
+                    {
+                        tensorScale = globalTensorScalingOverride;
+                    }
+                    massScaleFactor = tensorScale / activeRigidBody.mass;
+                    ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
+                    break;
+                case MassScaleType.InverseMassDifferential:
+                    isUnscaledInertiaTensorInitialized = _isUnscaledInertiaTensorInitialized.Get(rbb);
+                    Joint joint = rbb.GetComponent<Joint>();
+                    if (joint != null)
+                    {
+                        Rigidbody jointConnectedBody = joint.connectedBody;
+                        if (jointConnectedBody != null)
+                        {
+                            massScaleFactor = jointConnectedBody.mass / activeRigidBody.mass;
+                            ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
+                        }
+                    }
+                    else if (isUnscaledInertiaTensorInitialized)
+                    {
+                        ResetInertialTensor(rbb, activeRigidBody);
+                    }
+                    break;
+                case MassScaleType.Explicit:
+                    ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
+                    break;
+                case MassScaleType.None:
+                    if (_isUnscaledInertiaTensorInitialized.Get(rbb))
+                    {
+                        ResetInertialTensor(rbb, activeRigidBody);
+                    }
+                    break;
             }
 
             RefactorRigidbodyBehavior_UpdateTesorScale.End();

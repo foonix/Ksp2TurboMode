@@ -88,6 +88,36 @@ namespace TurboMode.Sim.Systems
                 })
                 .WithoutBurst()
                 .Run();
+
+            Entities
+                .WithName("ScrapePartSimPositions")
+                .ForEach((ref Part part, in SimObject simObject) =>
+                {
+                    var physicsSpace = GameManager.Instance.Game.UniverseView.PhysicsSpace;
+                    var bodyframe = simObject.inUniverse.transform.bodyFrame;
+                    var partComponent = simObject.inUniverse.Part;
+                    var rbc = simObject.inUniverse.Rigidbody;
+
+                    if (simObject.owner != Entity.Null)
+                    {
+                        var owner = EntityManager.GetComponentData<SimObject>(simObject.owner).inUniverse;
+
+                        part.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(owner.transform.bodyFrame as TransformFrame, bodyframe);
+                    }
+                    else
+                    {
+                        part.localToOwner = Matrix4x4D.Identity();
+                    }
+
+                    part.centerOfMass = partComponent.CenterOfMass.localPosition;
+                    // probably don't want to involve the physics space matrix here.  Maybe on the output side at the vessel level?
+                    part.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
+                    part.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
+                    part.reEntryMaximumFlux = partComponent.ThermalData.ReentryFlux;
+                    part.physicsMode = partComponent.PhysicsMode;
+                })
+                .WithoutBurst()
+                .Run();
         }
 
         private static void UpdateResources(ref DynamicBuffer<ContainedResource> resourceContainer, ResourceContainer prc)

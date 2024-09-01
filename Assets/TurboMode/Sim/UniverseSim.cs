@@ -200,6 +200,7 @@ namespace TurboMode.Sim
                     break;
                 case VesselComponent vessel:
                     em.AddComponent<Vessel>(entity);
+                    em.AddBuffer<OwnedPartRef>(entity);
                     break;
                 case KSP.Sim.impl.RigidbodyComponent rbc:
                     em.AddComponent<Components.RigidbodyComponent>(entity);
@@ -208,12 +209,30 @@ namespace TurboMode.Sim
             }
         }
 
-        public void ChangeOwner(IGGuid simObj, Entity to)
+        public void ChangeOwner(IGGuid simObj, Entity newOwner)
         {
             var entity = simToEnt[simObj];
             var simObjData = em.GetComponentData<SimObject>(entity);
-            simObjData.owner = to;
+            var previousOwner = simObjData.owner;
+            simObjData.owner = newOwner;
             em.SetComponentData(entity, simObjData);
+
+            // Remove from previous owner.
+            if (previousOwner != Entity.Null)
+            {
+                var childBuffer = em.GetBuffer<OwnedPartRef>(previousOwner);
+                OwnedPartRef.EnsureRemoved(childBuffer, entity);
+            }
+
+            // Add to new owner.
+            if (newOwner != Entity.Null)
+            {
+                var childBuffer = em.GetBuffer<OwnedPartRef>(newOwner);
+                OwnedPartRef.EnsureContains(childBuffer, entity);
+            }
+            // We may need to handle orphaned parts here.
+            // Orphaned parts still need some physics updates, and the original code
+            // calculates data at the part level instead of vessel level in that case.
         }
     }
 }

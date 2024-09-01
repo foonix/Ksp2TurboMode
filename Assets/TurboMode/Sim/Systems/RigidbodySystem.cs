@@ -1,4 +1,5 @@
 using KSP.Game;
+using KSP.Modding;
 using KSP.Sim;
 using KSP.Sim.impl;
 using MonoMod.RuntimeDetour;
@@ -116,6 +117,8 @@ namespace TurboMode.Sim.Systems
 
                     s_RbbFixedUpdate.Begin(rbb);
                     UpdateRbForces(rbb, sim.UniverseModel, rbc.accelerations);
+                    // This will replace most of what UpdateRbForces() is doing.
+                    UpdatePhysicsStats(in vessel, viewObj.view.Model.PartOwner);
                     _isHandCorrectionCheckPendingField.Set(rbb, true);
                     s_RbbFixedUpdate.End();
                 })
@@ -369,6 +372,17 @@ namespace TurboMode.Sim.Systems
                 _isUnscaledInertiaTensorInitialized = false;
             }
             */
+        }
+
+        private static void UpdatePhysicsStats(in Vessel vessel, PartOwnerComponent partOwnerComponent)
+        {
+            var bodyframe = partOwnerComponent.transform.bodyFrame;
+            var physicsSpace = GameManager.Instance.Game.UniverseView.PhysicsSpace;
+
+            partOwnerComponent.SetProperty("TotalMass", vessel.totalMass);
+            partOwnerComponent.CenterOfMass = new Position(bodyframe, vessel.centerOfMass);
+            partOwnerComponent.SetProperty("AngularVelocityMassAvg", physicsSpace.PhysicsToAngularVelocity(vessel.angularVelocityMassAvg));
+            partOwnerComponent.SetProperty("VelocityMassAvg", physicsSpace.PhysicsToVelocity(vessel.velocityMassAvg));
         }
     }
 }

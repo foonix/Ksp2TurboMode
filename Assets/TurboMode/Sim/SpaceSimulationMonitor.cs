@@ -90,12 +90,12 @@ namespace TurboMode.Sim
                     {
                         simObj.PartOwner.PartsAdded += (added) =>
                         {
-                            Debug.Log($"TM: UniversModel: Sim object {trackedObject} part added to owner {added.Count} ({Time.frameCount})");
+                            Debug.Log($"TM: UniversModel: Sim object {trackedObject} parts added to owner {added.Count} ({Time.frameCount})");
                             BulkChangeOwner(added);
                         };
                         simObj.PartOwner.PartsRemoved += (removed) =>
                         {
-                            Debug.Log($"TM: UniversModel: Sim object {trackedObject} part removed from owner {removed.Count} ({Time.frameCount})");
+                            Debug.Log($"TM: UniversModel: Sim object {trackedObject} parts removed from owner {removed.Count} ({Time.frameCount})");
                             BulkChangeOwner(removed);
                         };
                     }

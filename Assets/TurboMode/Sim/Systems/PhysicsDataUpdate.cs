@@ -3,6 +3,7 @@ using Unity.Burst;
 using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Entities;
+using Unity.Mathematics;
 
 namespace TurboMode.Sim.Systems
 {
@@ -58,7 +59,15 @@ namespace TurboMode.Sim.Systems
                 massModifiersHandle = massModifiersHandle,
                 partDefinitions = partDefinitions,
             }.ScheduleParallel(massUpdateQuery, state.Dependency);
+
+            var update = new UpdateVesselPhysicsStats()
+            {
+                parts = SystemAPI.GetComponentLookup<Part>(),
+                rbcs = SystemAPI.GetComponentLookup<RigidbodyComponent>(),
+            }.ScheduleParallel(updateMassHandle);
+
             updateMassHandle.Complete();
+            update.Complete();
         }
 
         /// <summary>
@@ -147,6 +156,50 @@ namespace TurboMode.Sim.Systems
 
                     rigidbodies[i] = rbc;
                 }
+            }
+        }
+
+        public partial struct UpdateVesselPhysicsStats : IJobEntity
+        {
+            [ReadOnly] public ComponentLookup<Part> parts;
+            [ReadOnly] public ComponentLookup<RigidbodyComponent> rbcs;
+
+            void Execute(ref Vessel vessel, in DynamicBuffer<OwnedPartRef> ownedParts)
+            {
+                Vector3d moment = Vector3d.zero;
+                Vector3d momentum = Vector3d.zero;
+                Vector3d angularMoment = Vector3d.zero;
+                double totalMass = 0;
+                double reEntryMaximumFlux = 0;
+
+                foreach (var partEntity in ownedParts)
+                {
+
+                    var part = parts[partEntity.partEntity];
+                    if (part.physicsMode == KSP.Sim.PartPhysicsModes.None)
+                    {
+                        continue;
+                    }
+
+                    var rbc = rbcs[partEntity.partEntity];
+
+                    moment += part.localToOwner.TransformPoint(part.centerOfMass) * rbc.effectiveMass;
+                    momentum += part.localToOwner.TransformVector(part.velocity) * rbc.effectiveMass;
+                    angularMoment += part.localToOwner.TransformVector(part.angularVelocity) * rbc.effectiveMass;
+
+                    reEntryMaximumFlux = math.max(reEntryMaximumFlux, part.reEntryMaximumFlux);
+
+                    totalMass += rbc.effectiveMass;
+                }
+
+                if (totalMass > 0)
+                {
+                    vessel.centerOfMass = moment / totalMass;
+                    vessel.velocityMassAvg = momentum / totalMass;
+                    vessel.angularVelocityMassAvg = angularMoment / totalMass;
+                }
+                vessel.totalMass = totalMass;
+                vessel.reEntryMaximumFlux = reEntryMaximumFlux;
             }
         }
     }

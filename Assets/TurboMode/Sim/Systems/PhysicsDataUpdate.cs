@@ -186,7 +186,7 @@ namespace TurboMode.Sim.Systems
 
                     moment += part.localToOwner.TransformPoint(part.centerOfMass) * rbc.effectiveMass;
                     momentum += part.localToOwner.TransformVector(part.velocity) * rbc.effectiveMass;
-                    angularMoment += part.localToOwner.TransformVector(part.angularVelocity) * rbc.effectiveMass;
+                    angularMoment += part.angularVelocity * rbc.effectiveMass;
 
                     reEntryMaximumFlux = math.max(reEntryMaximumFlux, part.reEntryMaximumFlux);
 

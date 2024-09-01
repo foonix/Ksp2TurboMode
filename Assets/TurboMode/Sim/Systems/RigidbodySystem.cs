@@ -323,6 +323,5 @@ namespace TurboMode.Sim.Systems
             rbc.centerOfMass = comPosition;
             rbc.mass = (float)vessel.totalMass;
         }
-
     }
 }

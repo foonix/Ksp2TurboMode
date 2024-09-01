@@ -10,12 +10,35 @@ namespace TurboMode.Patches
     public class RefactorRigidbodyBehavior
     {
         private static readonly ProfilerMarker SelectivePhysicsAutoSync_RigidbodyBehaviorOnUpdateEvents = new("SelectivePhysicsAutoSync.RigidbodyBehaviorOnUpdateEvents");
+        private static readonly ProfilerMarker RefactorRigidbodyBehavior_UpdateTesorScale = new("RefactorRigidbodyBehavior.UpdateTesorScale");
+
+        // private RigidbodyBehavior.MassScaleType
+        enum MassScaleType
+        {
+            None,
+            Explicit,
+            InverseMass,
+            InverseMassDifferential
+        }
 
         // private fields
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, PartOwnerBehavior> _ownerBehaviorField
             = new(typeof(RigidbodyBehavior).GetField("_ownerBehavior", BindingFlags.NonPublic | BindingFlags.Instance));
         private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, bool> _isHandCorrectionCheckPendingField
             = new(typeof(RigidbodyBehavior).GetField("_isHandCorrectionCheckPending", BindingFlags.NonPublic | BindingFlags.Instance));
+
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, bool> _isUnscaledInertiaTensorInitialized
+            = new(typeof(RigidbodyBehavior).GetField("_isUnscaledInertiaTensorInitialized", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, Vector3> _unscaledInertiaTensor
+            = new(typeof(RigidbodyBehavior).GetField("_unscaledInertiaTensor", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, int> _dynamicMassScaleType
+            = new(typeof(RigidbodyBehavior).GetField("_dynamicMassScaleType", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, int> _massScaleType
+            = new(typeof(RigidbodyBehavior).GetField("_massScaleType", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, float> _massScaleFactor
+            = new(typeof(RigidbodyBehavior).GetField("_massScaleFactor", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<RigidbodyBehavior, float> _globalTensorScalingOverride
+            = new(typeof(RigidbodyBehavior).GetField("_globalTensorScalingOverride", BindingFlags.NonPublic | BindingFlags.Instance));
 
         // events
         private static readonly ReflectionUtil.EventHelper<RigidbodyBehavior, Action<Position>> positionUpdatedHelper
@@ -262,6 +285,113 @@ namespace TurboMode.Patches
                 angularVelocityUpdatedHelper.Get(rbb)?.Invoke(rbb.AngularVelocity);
                 rbb.Model.inertiaTensor = physicsSpace.PhysicsToVector(activeRigidBody.inertiaTensor);
             }
+        }
+
+        // Replacement for the tensor scaling code in RigidbodyBehavior.OnPhysicsUpdate() but with the following revisions:
+        // - Remove dynamic tensor scaling code because it's never turned on
+        // - Remove some null checks because we're guarding the nulls externally.
+        public static void UpdateTesorScale(RigidbodyComponent rbc, RigidbodyBehavior rbb)
+        {
+            RefactorRigidbodyBehavior_UpdateTesorScale.Begin(rbb);
+            MassScaleType dynamicMassScaleType = (MassScaleType)_dynamicMassScaleType.Get(rbb);
+            MassScaleType massScaleType = (MassScaleType)_massScaleType.Get(rbb);
+            float massScaleFactor = _massScaleFactor.Get(rbb);
+            float globalTensorScalingOverride = _globalTensorScalingOverride.Get(rbb);
+            bool isUnscaledInertiaTensorInitialized = _isUnscaledInertiaTensorInitialized.Get(rbb);
+
+            var activeRigidBody = rbb.activeRigidBody;
+
+            if (PhysicsSettings.ENABLE_INERTIA_TENSOR_SCALING)
+            {
+                MassScaleType usedMassScaleType = (PhysicsSettings.ENABLE_DYNAMIC_TENSOR_SOLUTION ? dynamicMassScaleType : massScaleType);
+                if (usedMassScaleType != dynamicMassScaleType && rbc != null)
+                {
+                    PartComponent partComponent = rbc.SimulationObject.Part;
+                    if (partComponent != null)
+                    {
+                        PartOwnerComponent partOwner = partComponent.PartOwner;
+                        if (partOwner != null && partOwner.PartCount == 1 && partOwner.RootPart == partComponent)
+                        {
+                            if (rbb.mass <= PhysicsSettings.GLOBAL_LOWMASS_TENSOR_LIMIT)
+                            {
+                                usedMassScaleType = MassScaleType.Explicit;
+                                massScaleFactor = PhysicsSettings.GLOBAL_LOWMASS_TENSOR_SCALAR;
+                            }
+                            else
+                            {
+                                usedMassScaleType = MassScaleType.None;
+                            }
+                        }
+                    }
+                }
+                switch (usedMassScaleType)
+                {
+                    case MassScaleType.InverseMass:
+                        {
+                            float num10 = PhysicsSettings.GLOBAL_TENSOR_SCALAR;
+                            if (!Mathf.Approximately(globalTensorScalingOverride, num10))
+                            {
+                                num10 = globalTensorScalingOverride;
+                            }
+                            massScaleFactor = num10 / activeRigidBody.mass;
+                            ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
+                            break;
+                        }
+                    case MassScaleType.InverseMassDifferential:
+                        {
+                            Joint component2 = rbb.GetComponent<Joint>();
+                            if (component2 != null)
+                            {
+                                Rigidbody connectedBody2 = component2.connectedBody;
+                                if (connectedBody2 != null)
+                                {
+                                    massScaleFactor = connectedBody2.mass / activeRigidBody.mass;
+                                    ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
+                                }
+                            }
+                            else if (isUnscaledInertiaTensorInitialized)
+                            {
+                                ResetInertialTensor(rbb, activeRigidBody);
+                            }
+                            break;
+                        }
+                    case MassScaleType.Explicit:
+                        ScaleInertiaTensor(rbb, activeRigidBody, massScaleFactor);
+                        break;
+                    case MassScaleType.None:
+                        if (isUnscaledInertiaTensorInitialized)
+                        {
+                            ResetInertialTensor(rbb, activeRigidBody);
+                        }
+                        break;
+                }
+            }
+            else if (isUnscaledInertiaTensorInitialized)
+            {
+                ResetInertialTensor(rbb, activeRigidBody);
+            }
+
+            RefactorRigidbodyBehavior_UpdateTesorScale.End();
+        }
+
+        private static void ScaleInertiaTensor(RigidbodyBehavior rbb, Rigidbody rb, float scalar)
+        {
+            if (!_isUnscaledInertiaTensorInitialized.Get(rbb))
+            {
+                _unscaledInertiaTensor.Set(rbb, rb.inertiaTensor);
+                _isUnscaledInertiaTensorInitialized.Set(rbb, true);
+            }
+            float currentMass = rb.mass;
+            rb.inertiaTensor = _unscaledInertiaTensor.Get(rbb) * scalar;
+            rb.mass = currentMass;
+            rb.WakeUp();
+            _massScaleFactor.Set(rbb, scalar);
+        }
+
+        private static void ResetInertialTensor(RigidbodyBehavior rbb, Rigidbody activeRigidbody)
+        {
+            activeRigidbody.ResetInertiaTensor();
+            _isUnscaledInertiaTensorInitialized.Set(rbb, false);
         }
     }
 }

@@ -296,86 +296,12 @@ namespace TurboMode.Sim.Systems
 
             Physics.autoSyncTransforms = true;
 
-            //if (!rbb.IsPhysXActive)
-            //{
-            //    return;
-            //}
+            if (!rbb.IsPhysXActive)
+            {
+                return;
+            }
 
-            // Seems to be enabled, but not sure if it's necessary.
-            /*
-            if (PhysicsSettings.ENABLE_INERTIA_TENSOR_SCALING && part != null)
-            {
-                MassScaleType massScaleType = (PhysicsSettings.ENABLE_DYNAMIC_TENSOR_SOLUTION ? _dynamicMassScaleType : _massScaleType);
-                if (massScaleType != _dynamicMassScaleType && _simObjectComponent != null)
-                {
-                    PartComponent part3 = _simObjectComponent.SimulationObject.Part;
-                    if (part3 != null)
-                    {
-                        PartOwnerComponent partOwner = part3.PartOwner;
-                        if (partOwner != null && partOwner.PartCount == 1 && partOwner.RootPart == part3)
-                        {
-                            if (mass <= PhysicsSettings.GLOBAL_LOWMASS_TENSOR_LIMIT)
-                            {
-                                massScaleType = MassScaleType.Explicit;
-                                _massScaleFactor = PhysicsSettings.GLOBAL_LOWMASS_TENSOR_SCALAR;
-                            }
-                            else
-                            {
-                                massScaleType = MassScaleType.None;
-                            }
-                        }
-                    }
-                }
-                switch (massScaleType)
-                {
-                    case MassScaleType.InverseMass:
-                        {
-                            float num10 = PhysicsSettings.GLOBAL_TENSOR_SCALAR;
-                            if (!Mathf.Approximately(_globalTensorScalingOverride, num10))
-                            {
-                                num10 = _globalTensorScalingOverride;
-                            }
-                            _massScaleFactor = num10 / activeRigidBody.mass;
-                            ScaleInertiaTensor(activeRigidBody, _massScaleFactor);
-                            break;
-                        }
-                    case MassScaleType.InverseMassDifferential:
-                        {
-                            Joint component2 = GetComponent<Joint>();
-                            if (component2 != null)
-                            {
-                                Rigidbody connectedBody2 = component2.connectedBody;
-                                if (connectedBody2 != null)
-                                {
-                                    float num11 = (_massScaleFactor = connectedBody2.mass / activeRigidBody.mass);
-                                    ScaleInertiaTensor(activeRigidBody, _massScaleFactor);
-                                }
-                            }
-                            else if (_isUnscaledInertiaTensorInitialized)
-                            {
-                                ResetInertiaTensor();
-                                _isUnscaledInertiaTensorInitialized = false;
-                            }
-                            break;
-                        }
-                    case MassScaleType.Explicit:
-                        ScaleInertiaTensor(activeRigidBody, _massScaleFactor);
-                        break;
-                    case MassScaleType.None:
-                        if (_isUnscaledInertiaTensorInitialized)
-                        {
-                            ResetInertiaTensor();
-                            _isUnscaledInertiaTensorInitialized = false;
-                        }
-                        break;
-                }
-            }
-            else if (_isUnscaledInertiaTensorInitialized)
-            {
-                ResetInertiaTensor();
-                _isUnscaledInertiaTensorInitialized = false;
-            }
-            */
+            RefactorRigidbodyBehavior.UpdateTesorScale(model, rbb);
         }
 
         private static void UpdatePhysicsStats(in Vessel vessel, SimulationObjectModel vesselSimObj)
@@ -397,5 +323,6 @@ namespace TurboMode.Sim.Systems
             rbc.centerOfMass = comPosition;
             rbc.mass = (float)vessel.totalMass;
         }
+
     }
 }

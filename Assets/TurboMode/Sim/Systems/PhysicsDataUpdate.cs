@@ -159,6 +159,7 @@ namespace TurboMode.Sim.Systems
             }
         }
 
+        [BurstCompile]
         public partial struct UpdateVesselPhysicsStats : IJobEntity
         {
             [ReadOnly] public ComponentLookup<Part> parts;

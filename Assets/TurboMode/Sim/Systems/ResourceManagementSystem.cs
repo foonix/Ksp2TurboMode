@@ -6,6 +6,7 @@ using System.Collections.Generic;
 using System.Reflection;
 using TurboMode.Sim.Components;
 using Unity.Entities;
+using Unity.Profiling;
 
 namespace TurboMode.Sim.Systems
 {
@@ -21,6 +22,8 @@ namespace TurboMode.Sim.Systems
         private static readonly ReflectionUtil.FieldHelper<ResourceContainer, List<double>> _storedUnitsLookupField
             = new(typeof(ResourceContainer).GetField("_storedUnitsLookup", BindingFlags.NonPublic | BindingFlags.Instance));
 
+        private static readonly ProfilerMarker s_scrapeSimPositionsMarker = new("ScrapePartSimPositions");
+
         protected override void OnCreate()
         {
             var rdd = GameManager.Instance.Game.ResourceDefinitionDatabase;
@@ -30,6 +33,13 @@ namespace TurboMode.Sim.Systems
 
         protected override void OnUpdate()
         {
+            var game = GameManager.Instance.Game;
+            if (!game.IsSimulationRunning())
+            {
+                return;
+            }
+            var physicsSpace = game.UniverseView.PhysicsSpace;
+
             var partData = SystemAPI.GetSingletonBuffer<PartDefintionData>();
             var partDataMap = SystemAPI.ManagedAPI.GetSingleton<PartDefintionData.PartNameToDataIdMap>();
             var universeSim = SystemAPI.ManagedAPI.GetSingleton<UniverseRef>();
@@ -89,35 +99,45 @@ namespace TurboMode.Sim.Systems
                 .WithoutBurst()
                 .Run();
 
-            Entities
-                .WithName("ScrapePartSimPositions")
-                .ForEach((ref Part part, in SimObject simObject) =>
+            // This is basically the read steps in PartOwnerComponent.CalculatePhysicsStats(),
+            // except we don't need to read the mass because we're calculating it from the resource totals.
+            // We'll still total the mass offthread, but most (all?) of the motion/tensor data doesn't matter
+            // for background vessels, skip part reads that aren't needed.
+            foreach (var (ownedParts, vesselSimObject) in SystemAPI.Query<DynamicBuffer<OwnedPartRef>, SimObject>())
+            {
+                using var marker = s_scrapeSimPositionsMarker.Auto();
+                var ownerFrame = vesselSimObject.inUniverse.transform.bodyFrame;
+                var vesselPhysicsMode = vesselSimObject.inUniverse.Vessel.Physics;
+
+                if (vesselPhysicsMode != PhysicsMode.RigidBody)
                 {
-                    var physicsSpace = GameManager.Instance.Game.UniverseView.PhysicsSpace;
-                    var bodyframe = simObject.inUniverse.transform.bodyFrame;
-                    var partComponent = simObject.inUniverse.Part;
-                    var rbc = simObject.inUniverse.Rigidbody;
+                    continue;
+                }
 
-                    if (simObject.owner != Entity.Null)
+                foreach (var ownedPart in ownedParts)
+                {
+                    var part = SystemAPI.GetComponent<Part>(ownedPart.partEntity);
+                    var partSimObject = SystemAPI.ManagedAPI.GetComponent<SimObject>(ownedPart.partEntity);
+
+                    var partComponent = partSimObject.inUniverse.Part;
+                    var rbc = partSimObject.inUniverse.Rigidbody;
+
+                    if (rbc.PhysicsMode != PartPhysicsModes.None)
                     {
-                        var owner = EntityManager.GetComponentData<SimObject>(simObject.owner).inUniverse;
+                        part.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(ownerFrame as TransformFrame, ownerFrame);
 
-                        part.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(owner.transform.bodyFrame as TransformFrame, bodyframe);
-                    }
-                    else
-                    {
-                        part.localToOwner = Matrix4x4D.Identity();
+                        part.centerOfMass = partComponent.CenterOfMass.localPosition;
+                        // probably don't want to involve the physics space matrix here.  Maybe on the output side at the vessel level?
+                        part.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
+                        part.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
                     }
 
-                    part.centerOfMass = partComponent.CenterOfMass.localPosition;
-                    // probably don't want to involve the physics space matrix here.  Maybe on the output side at the vessel level?
-                    part.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
-                    part.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
                     part.reEntryMaximumFlux = partComponent.ThermalData.ReentryFlux;
                     part.physicsMode = partComponent.PhysicsMode;
-                })
-                .WithoutBurst()
-                .Run();
+
+                    SystemAPI.SetComponent(ownedPart.partEntity, part);
+                }
+            }
         }
 
         private static void UpdateResources(ref DynamicBuffer<ContainedResource> resourceContainer, ResourceContainer prc)

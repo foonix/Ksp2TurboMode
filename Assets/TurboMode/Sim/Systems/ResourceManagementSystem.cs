@@ -109,6 +109,8 @@ namespace TurboMode.Sim.Systems
                 var ownerFrame = vesselSimObject.inUniverse.transform.bodyFrame as TransformFrame;
                 var vesselPhysicsMode = vesselSimObject.inUniverse.Vessel.Physics;
 
+                Components.RigidbodyComponent rb = default;
+
                 if (vesselPhysicsMode != PhysicsMode.RigidBody)
                 {
                     continue;
@@ -116,7 +118,6 @@ namespace TurboMode.Sim.Systems
 
                 foreach (var ownedPart in ownedParts)
                 {
-                    var part = SystemAPI.GetComponent<Part>(ownedPart.partEntity);
                     var partSimObject = SystemAPI.ManagedAPI.GetComponent<SimObject>(ownedPart.partEntity);
 
                     var partComponent = partSimObject.inUniverse.Part;
@@ -124,23 +125,23 @@ namespace TurboMode.Sim.Systems
 
                     if (rbc.PhysicsMode != PartPhysicsModes.None)
                     {
-                        part.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(ownerFrame, rbc.transform.bodyFrame);
+                        rb.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(ownerFrame, rbc.transform.bodyFrame);
 
-                        part.centerOfMass = partComponent.CenterOfMass.localPosition;
+                        rb.centerOfMass = partComponent.CenterOfMass.localPosition;
                         // probably don't want to involve the physics space matrix here.  Maybe on the output side at the vessel level?
-                        part.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
-                        part.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
+                        rb.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
+                        rb.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
 
                         // The base game counts PartPhysicsModes.None parts toward MOI calcs, but I think that might be wrong.
                         // More importantly, it's overhead. :D
-                        part.inertiaTensor = rbc.inertiaTensor.vector;
-                        part.inertiaTensorRotation = ownerFrame.ToLocalRotation(rbc.inertiaTensorRotation);
+                        rb.inertiaTensor = rbc.inertiaTensor.vector;
+                        rb.inertiaTensorRotation = ownerFrame.ToLocalRotation(rbc.inertiaTensorRotation);
                     }
 
-                    part.reEntryMaximumFlux = partComponent.ThermalData.ReentryFlux;
-                    part.physicsMode = partComponent.PhysicsMode;
+                    rb.reEntryMaximumFlux = partComponent.ThermalData.ReentryFlux;
+                    rb.physicsMode = partComponent.PhysicsMode;
 
-                    SystemAPI.SetComponent(ownedPart.partEntity, part);
+                    SystemAPI.SetComponent(ownedPart.partEntity, rb);
                 }
             }
         }

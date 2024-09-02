@@ -51,40 +51,16 @@ namespace TurboMode.Sim.Components
     {
         readonly public ushort typeId;
 
-        public PartPhysicsModes physicsMode;
-
-        public Matrix4x4D localToOwner;
-        /// <summary>
-        /// Center of mass is dynamic on some parts (seems just control surfaces)
-        /// Position is relative to sim object.
-        /// </summary>
-        public Vector3d centerOfMass;
-        public Vector3d velocity;
-        public Vector3d angularVelocity;
-        public Vector3d inertiaTensor;
-        public QuaternionD inertiaTensorRotation;
-
-
         public double dryMass;
         public double greenMass;
         public double wetMass;
 
-        public double reEntryMaximumFlux;
-
         public Part(PartComponent part, ushort typeId)
         {
             this.typeId = typeId;
-            physicsMode = default;
             dryMass = part.DryMass;
             greenMass = part.GreenMass;
             wetMass = part.WetMass;
-            localToOwner = Matrix4x4D.Identity();
-            centerOfMass = default;
-            velocity = default;
-            angularVelocity = default;
-            inertiaTensor = default;
-            inertiaTensorRotation = QuaternionD.identity;
-            reEntryMaximumFlux = 0;
         }
     }
 
@@ -124,6 +100,21 @@ namespace TurboMode.Sim.Components
     {
         public Vector3d accelerations;
         public double effectiveMass;
+
+        public PartPhysicsModes physicsMode;
+
+        public Matrix4x4D localToOwner;
+        /// <summary>
+        /// Center of mass is dynamic on some parts (seems just control surfaces)
+        /// Position is relative to sim object.
+        /// </summary>
+        public Vector3d centerOfMass;
+        public Vector3d velocity;
+        public Vector3d angularVelocity;
+        public Vector3d inertiaTensor;
+        public QuaternionD inertiaTensorRotation;
+
+        public double reEntryMaximumFlux;
     }
 
     public struct KerbalStorage : IComponentData

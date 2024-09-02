@@ -63,7 +63,6 @@ namespace TurboMode.Sim.Systems
 
             var update = new UpdateVesselPhysicsStats()
             {
-                parts = SystemAPI.GetComponentLookup<Part>(),
                 rbcs = SystemAPI.GetComponentLookup<RigidbodyComponent>(),
             }.ScheduleParallel(updateMassHandle);
 
@@ -163,7 +162,6 @@ namespace TurboMode.Sim.Systems
         [BurstCompile]
         public partial struct UpdateVesselPhysicsStats : IJobEntity
         {
-            [ReadOnly] public ComponentLookup<Part> parts;
             [ReadOnly] public ComponentLookup<RigidbodyComponent> rbcs;
 
             void Execute(ref Vessel vessel, in DynamicBuffer<OwnedPartRef> ownedParts)
@@ -176,19 +174,17 @@ namespace TurboMode.Sim.Systems
 
                 foreach (var partEntity in ownedParts)
                 {
-                    var part = parts[partEntity.partEntity];
-                    if (part.physicsMode == KSP.Sim.PartPhysicsModes.None)
+                    var rbc = rbcs[partEntity.partEntity];
+                    if (rbc.physicsMode == KSP.Sim.PartPhysicsModes.None)
                     {
                         continue;
                     }
 
-                    var rbc = rbcs[partEntity.partEntity];
+                    moment += rbc.localToOwner.TransformPoint(rbc.centerOfMass) * rbc.effectiveMass;
+                    momentum += rbc.localToOwner.TransformVector(rbc.velocity) * rbc.effectiveMass;
+                    angularMoment += rbc.angularVelocity * rbc.effectiveMass;
 
-                    moment += part.localToOwner.TransformPoint(part.centerOfMass) * rbc.effectiveMass;
-                    momentum += part.localToOwner.TransformVector(part.velocity) * rbc.effectiveMass;
-                    angularMoment += part.angularVelocity * rbc.effectiveMass;
-
-                    reEntryMaximumFlux = math.max(reEntryMaximumFlux, part.reEntryMaximumFlux);
+                    reEntryMaximumFlux = math.max(reEntryMaximumFlux, rbc.reEntryMaximumFlux);
 
                     totalMass += rbc.effectiveMass;
                 }
@@ -206,15 +202,14 @@ namespace TurboMode.Sim.Systems
 
                     foreach (var partEntity in ownedParts)
                     {
-                        var part = parts[partEntity.partEntity];
                         var rbc = rbcs[partEntity.partEntity];
 
-                        KSPUtil.ToDiagonalMatrix2(part.inertiaTensor, ref m);
-                        Quaternion q = QuaternionD.Inverse(part.inertiaTensorRotation);
-                        Matrix4x4 matrix4x = Matrix4x4.TRS(Vector3.zero, part.inertiaTensorRotation, Vector3.one);
+                        KSPUtil.ToDiagonalMatrix2(rbc.inertiaTensor, ref m);
+                        Quaternion q = QuaternionD.Inverse(rbc.inertiaTensorRotation);
+                        Matrix4x4 matrix4x = Matrix4x4.TRS(Vector3.zero, rbc.inertiaTensorRotation, Vector3.one);
                         Matrix4x4 matrix4x2 = Matrix4x4.TRS(Vector3.zero, q, Vector3.one);
                         KSPUtil.Add(ref left, matrix4x * m * matrix4x2);
-                        Vector3d vector3d = part.localToOwner.TransformPoint(part.centerOfMass) - vessel.centerOfMass;
+                        Vector3d vector3d = rbc.localToOwner.TransformPoint(rbc.centerOfMass) - vessel.centerOfMass;
                         KSPUtil.ToDiagonalMatrix2((float)(rbc.effectiveMass * vector3d.sqrMagnitude), ref m2);
                         KSPUtil.Add(ref left, m2);
                         KSPUtil.OuterProduct2(vector3d, (0f - rbc.effectiveMass) * vector3d, ref m3);

@@ -304,6 +304,15 @@ namespace TurboMode.Sim.Systems
             RefactorRigidbodyBehavior.UpdateTesorScale(model, rbb);
         }
 
+        private static readonly ReflectionUtil.FieldHelper<PartOwnerComponent, double> ownerTotalMass
+            = new(typeof(PartOwnerComponent).GetField("<TotalMass>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartOwnerComponent, AngularVelocity> ownerAngularVelocityMassAvg
+            = new(typeof(PartOwnerComponent).GetField("<AngularVelocityMassAvg>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartOwnerComponent, Velocity> ownerVelocityMassAvg
+            = new(typeof(PartOwnerComponent).GetField("<VelocityMassAvg>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+        private static readonly ReflectionUtil.FieldHelper<PartOwnerComponent, Vector> ownerMOI
+            = new(typeof(PartOwnerComponent).GetField("<MOI>k__BackingField", BindingFlags.NonPublic | BindingFlags.Instance));
+
         private static void UpdatePhysicsStats(in Vessel vessel, SimulationObjectModel vesselSimObj)
         {
             var partOwnerComponent = vesselSimObj.PartOwner;
@@ -313,11 +322,11 @@ namespace TurboMode.Sim.Systems
 
             var comPosition = new Position(bodyframe, vessel.centerOfMass);
 
-            partOwnerComponent.SetProperty("TotalMass", vessel.totalMass);
             partOwnerComponent.CenterOfMass = comPosition;
-            partOwnerComponent.SetProperty("AngularVelocityMassAvg", physicsSpace.PhysicsToAngularVelocity(vessel.angularVelocityMassAvg));
-            partOwnerComponent.SetProperty("VelocityMassAvg", physicsSpace.PhysicsToVelocity(vessel.velocityMassAvg));
-            partOwnerComponent.SetProperty("MOI", new Vector(bodyframe, vessel.momentOfInertia));
+            ownerTotalMass.Set(partOwnerComponent, vessel.totalMass);
+            ownerAngularVelocityMassAvg.Set(partOwnerComponent, physicsSpace.PhysicsToAngularVelocity(vessel.angularVelocityMassAvg));
+            ownerVelocityMassAvg.Set(partOwnerComponent, physicsSpace.PhysicsToVelocity(vessel.velocityMassAvg));
+            ownerMOI.Set(partOwnerComponent, new Vector(bodyframe, vessel.momentOfInertia));
 
             // Still needed: AngularMomentum (unused in the base game)
 

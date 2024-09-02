@@ -106,7 +106,7 @@ namespace TurboMode.Sim.Systems
             foreach (var (ownedParts, vesselSimObject) in SystemAPI.Query<DynamicBuffer<OwnedPartRef>, SimObject>())
             {
                 using var marker = s_scrapeSimPositionsMarker.Auto();
-                var ownerFrame = vesselSimObject.inUniverse.transform.bodyFrame;
+                var ownerFrame = vesselSimObject.inUniverse.transform.bodyFrame as TransformFrame;
                 var vesselPhysicsMode = vesselSimObject.inUniverse.Vessel.Physics;
 
                 if (vesselPhysicsMode != PhysicsMode.RigidBody)
@@ -124,12 +124,17 @@ namespace TurboMode.Sim.Systems
 
                     if (rbc.PhysicsMode != PartPhysicsModes.None)
                     {
-                        part.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(ownerFrame as TransformFrame, ownerFrame);
+                        part.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(ownerFrame, rbc.transform.bodyFrame);
 
                         part.centerOfMass = partComponent.CenterOfMass.localPosition;
                         // probably don't want to involve the physics space matrix here.  Maybe on the output side at the vessel level?
                         part.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
                         part.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
+
+                        // The base game counts PartPhysicsModes.None parts toward MOI calcs, but I think that might be wrong.
+                        // More importantly, it's overhead. :D
+                        part.inertiaTensor = rbc.inertiaTensor.vector;
+                        part.inertiaTensorRotation = ownerFrame.ToLocalRotation(rbc.inertiaTensorRotation);
                     }
 
                     part.reEntryMaximumFlux = partComponent.ThermalData.ReentryFlux;

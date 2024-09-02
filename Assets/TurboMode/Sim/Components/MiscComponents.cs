@@ -17,6 +17,7 @@ namespace TurboMode.Sim.Components
         public Vector3d angularVelocityMassAvg;
         public Vector3d velocityMassAvg;
         public Vector3d angularMomentum;
+        public Vector3d momentOfInertia;
         public double totalMass;
         public double reEntryMaximumFlux;
     }
@@ -60,6 +61,9 @@ namespace TurboMode.Sim.Components
         public Vector3d centerOfMass;
         public Vector3d velocity;
         public Vector3d angularVelocity;
+        public Vector3d inertiaTensor;
+        public QuaternionD inertiaTensorRotation;
+
 
         public double dryMass;
         public double greenMass;
@@ -78,6 +82,8 @@ namespace TurboMode.Sim.Components
             centerOfMass = default;
             velocity = default;
             angularVelocity = default;
+            inertiaTensor = default;
+            inertiaTensorRotation = QuaternionD.identity;
             reEntryMaximumFlux = 0;
         }
     }

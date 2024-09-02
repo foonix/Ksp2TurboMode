@@ -4,6 +4,7 @@ using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace TurboMode.Sim.Systems
 {
@@ -175,7 +176,6 @@ namespace TurboMode.Sim.Systems
 
                 foreach (var partEntity in ownedParts)
                 {
-
                     var part = parts[partEntity.partEntity];
                     if (part.physicsMode == KSP.Sim.PartPhysicsModes.None)
                     {
@@ -198,6 +198,29 @@ namespace TurboMode.Sim.Systems
                     vessel.centerOfMass = moment / totalMass;
                     vessel.velocityMassAvg = momentum / totalMass;
                     vessel.angularVelocityMassAvg = angularMoment / totalMass;
+
+                    Matrix4x4 left = Matrix4x4.zero;
+                    Matrix4x4 m = Matrix4x4.identity;
+                    Matrix4x4 m2 = Matrix4x4.identity;
+                    Matrix4x4 m3 = Matrix4x4.identity;
+
+                    foreach (var partEntity in ownedParts)
+                    {
+                        var part = parts[partEntity.partEntity];
+                        var rbc = rbcs[partEntity.partEntity];
+
+                        KSPUtil.ToDiagonalMatrix2(part.inertiaTensor, ref m);
+                        Quaternion q = QuaternionD.Inverse(part.inertiaTensorRotation);
+                        Matrix4x4 matrix4x = Matrix4x4.TRS(Vector3.zero, part.inertiaTensorRotation, Vector3.one);
+                        Matrix4x4 matrix4x2 = Matrix4x4.TRS(Vector3.zero, q, Vector3.one);
+                        KSPUtil.Add(ref left, matrix4x * m * matrix4x2);
+                        Vector3d vector3d = part.localToOwner.TransformPoint(part.centerOfMass) - vessel.centerOfMass;
+                        KSPUtil.ToDiagonalMatrix2((float)(rbc.effectiveMass * vector3d.sqrMagnitude), ref m2);
+                        KSPUtil.Add(ref left, m2);
+                        KSPUtil.OuterProduct2(vector3d, (0f - rbc.effectiveMass) * vector3d, ref m3);
+                        KSPUtil.Add(ref left, m3);
+                    }
+                    vessel.momentOfInertia = KSPUtil.Diag(left);
                 }
                 vessel.totalMass = totalMass;
                 vessel.reEntryMaximumFlux = reEntryMaximumFlux;

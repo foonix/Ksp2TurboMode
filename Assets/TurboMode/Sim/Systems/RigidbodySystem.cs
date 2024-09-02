@@ -317,8 +317,9 @@ namespace TurboMode.Sim.Systems
             partOwnerComponent.CenterOfMass = comPosition;
             partOwnerComponent.SetProperty("AngularVelocityMassAvg", physicsSpace.PhysicsToAngularVelocity(vessel.angularVelocityMassAvg));
             partOwnerComponent.SetProperty("VelocityMassAvg", physicsSpace.PhysicsToVelocity(vessel.velocityMassAvg));
+            partOwnerComponent.SetProperty("MOI", new Vector(bodyframe, vessel.momentOfInertia));
 
-            // Still needed: MOI and AngularMomentum
+            // Still needed: AngularMomentum (unused in the base game)
 
             rbc.centerOfMass = comPosition;
             rbc.mass = (float)vessel.totalMass;

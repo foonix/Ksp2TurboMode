@@ -135,7 +135,7 @@ namespace TurboMode.Sim.Systems
                         // The base game counts PartPhysicsModes.None parts toward MOI calcs, but I think that might be wrong.
                         // More importantly, it's overhead. :D
                         rb.inertiaTensor = rbc.inertiaTensor.vector;
-                        rb.inertiaTensorRotation = ownerFrame.ToLocalRotation(rbc.inertiaTensorRotation);
+                        rb.inertiaTensorRotation = rbc.inertiaTensorRotation.localRotation;
                     }
 
                     rb.reEntryMaximumFlux = partComponent.ThermalData.ReentryFlux;

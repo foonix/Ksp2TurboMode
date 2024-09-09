@@ -179,9 +179,10 @@ namespace TurboMode.Sim.Systems
                     {
                         continue;
                     }
+                    Matrix4x4 localToOwner = (Matrix4x4)rbc.localToOwner;
 
-                    moment += rbc.localToOwner.TransformPoint(rbc.centerOfMass) * rbc.effectiveMass;
-                    momentum += rbc.localToOwner.TransformVector(rbc.velocity) * rbc.effectiveMass;
+                    moment += localToOwner.MultiplyPoint3x4(rbc.centerOfMass) * (float)rbc.effectiveMass;
+                    momentum += localToOwner.MultiplyVector(rbc.velocity) * (float)rbc.effectiveMass;
                     angularMoment += rbc.angularVelocity * rbc.effectiveMass;
 
                     reEntryMaximumFlux = math.max(reEntryMaximumFlux, rbc.reEntryMaximumFlux);
@@ -203,13 +204,15 @@ namespace TurboMode.Sim.Systems
                     foreach (var partEntity in ownedParts)
                     {
                         var rbc = rbcs[partEntity.partEntity];
+                        Matrix4x4 localToOwner = (Matrix4x4)rbc.localToOwner;
+                        var ownerspaceRotation = localToOwner.rotation * (Quaternion)rbc.inertiaTensorRotation;
 
                         KSPUtil.ToDiagonalMatrix2(rbc.inertiaTensor, ref m);
-                        Quaternion q = QuaternionD.Inverse(rbc.inertiaTensorRotation);
+                        Quaternion q = Quaternion.Inverse(ownerspaceRotation);
                         Matrix4x4 matrix4x = Matrix4x4.TRS(Vector3.zero, rbc.inertiaTensorRotation, Vector3.one);
                         Matrix4x4 matrix4x2 = Matrix4x4.TRS(Vector3.zero, q, Vector3.one);
                         KSPUtil.Add(ref left, matrix4x * m * matrix4x2);
-                        Vector3d vector3d = rbc.localToOwner.TransformPoint(rbc.centerOfMass) - vessel.centerOfMass;
+                        Vector3d vector3d = localToOwner.MultiplyPoint3x4(rbc.centerOfMass) - vessel.centerOfMass;
                         KSPUtil.ToDiagonalMatrix2((float)(rbc.effectiveMass * vector3d.sqrMagnitude), ref m2);
                         KSPUtil.Add(ref left, m2);
                         KSPUtil.OuterProduct2(vector3d, (0f - rbc.effectiveMass) * vector3d, ref m3);

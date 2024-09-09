@@ -324,7 +324,7 @@ namespace TurboMode.Sim.Systems
 
             partOwnerComponent.CenterOfMass = comPosition;
             ownerTotalMass.Set(partOwnerComponent, vessel.totalMass);
-            ownerAngularVelocityMassAvg.Set(partOwnerComponent, physicsSpace.PhysicsToAngularVelocity(vessel.angularVelocityMassAvg));
+            ownerAngularVelocityMassAvg.Set(partOwnerComponent, new(bodyframe.motionFrame.AngularVelocity.relativeToMotion, vessel.angularVelocityMassAvg));
             ownerVelocityMassAvg.Set(partOwnerComponent, physicsSpace.PhysicsToVelocity(vessel.velocityMassAvg));
             ownerMOI.Set(partOwnerComponent, new Vector(bodyframe, vessel.momentOfInertia));
 

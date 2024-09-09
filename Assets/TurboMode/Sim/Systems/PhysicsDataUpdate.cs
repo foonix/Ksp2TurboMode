@@ -182,8 +182,8 @@ namespace TurboMode.Sim.Systems
                     Matrix4x4 localToOwner = (Matrix4x4)rbc.localToOwner;
 
                     moment += localToOwner.MultiplyPoint3x4(rbc.centerOfMass) * (float)rbc.effectiveMass;
-                    momentum += localToOwner.MultiplyVector(rbc.velocity) * (float)rbc.effectiveMass;
-                    angularMoment += rbc.angularVelocity * rbc.effectiveMass;
+                    momentum += (localToOwner.MultiplyVector((Vector3)rbc.velocity) + vessel.velocity) * rbc.effectiveMass;
+                    angularMoment += (vessel.angularVelocity + rbc.angularVelocity) * rbc.effectiveMass;
 
                     reEntryMaximumFlux = math.max(reEntryMaximumFlux, rbc.reEntryMaximumFlux);
 

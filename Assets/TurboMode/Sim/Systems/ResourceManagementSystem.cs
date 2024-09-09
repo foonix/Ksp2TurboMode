@@ -103,7 +103,7 @@ namespace TurboMode.Sim.Systems
             // except we don't need to read the mass because we're calculating it from the resource totals.
             // We'll still total the mass offthread, but most (all?) of the motion/tensor data doesn't matter
             // for background vessels, skip part reads that aren't needed.
-            foreach (var (ownedParts, vesselSimObject) in SystemAPI.Query<DynamicBuffer<OwnedPartRef>, SimObject>())
+            foreach (var (vessel, ownedParts, vesselSimObject) in SystemAPI.Query<RefRW<Vessel>, DynamicBuffer<OwnedPartRef>, SimObject>())
             {
                 using var marker = s_scrapeSimPositionsMarker.Auto();
                 var ownerFrame = vesselSimObject.inUniverse.transform.bodyFrame as TransformFrame;
@@ -115,6 +115,14 @@ namespace TurboMode.Sim.Systems
                 {
                     continue;
                 }
+
+                // It is possible for each individual vector/rotation/velocity/etc to be in separate transform/motion frames,
+                // but in practice it seems that they aren't.  Most of the original overhead was just transforming points/rotations
+                // to and from vessel/physics space.
+                // So we get the movement data at the vessel level, and then do as much as
+                // possible offthread using the part's matrix.
+                vessel.ValueRW.velocity = physicsSpace.VelocityToPhysics(ownerFrame.motionFrame.Velocity, ownerFrame.transform.Position);
+                vessel.ValueRW.angularVelocity = ownerFrame.motionFrame.AngularVelocity.relativeAngularVelocity.vector;
 
                 foreach (var ownedPart in ownedParts)
                 {
@@ -128,12 +136,13 @@ namespace TurboMode.Sim.Systems
                         rb.localToOwner = Patches.BurstifyTransformFrames.ComputeTransformFromOther(ownerFrame, rbc.transform.bodyFrame);
 
                         rb.centerOfMass = partComponent.CenterOfMass.localPosition;
-                        // probably don't want to involve the physics space matrix here.  Maybe on the output side at the vessel level?
-                        rb.angularVelocity = physicsSpace.AngularVelocityToPhysics(rbc.AngularVelocity);
-                        rb.velocity = physicsSpace.VelocityToPhysics(rbc.Velocity, rbc.Position);
+                        rb.angularVelocity = rbc.AngularVelocity.relativeAngularVelocity.vector;
+                        rb.velocity = rbc.Velocity.relativeVelocity.vector;
 
                         // The base game counts PartPhysicsModes.None parts toward MOI calcs, but I think that might be wrong.
-                        // More importantly, it's overhead. :D
+                        // It might slightly overestimate the effective PhysX MOI.  I believe the colliders might affect the tensors,
+                        // but they don't change the Rigidbody mass.
+                        // But more importantly, it's overhead, so we skip them. :D
                         rb.inertiaTensor = rbc.inertiaTensor.vector;
                         rb.inertiaTensorRotation = rbc.inertiaTensorRotation.localRotation;
                     }

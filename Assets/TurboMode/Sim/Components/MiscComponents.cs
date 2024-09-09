@@ -20,6 +20,10 @@ namespace TurboMode.Sim.Components
         public Vector3d momentOfInertia;
         public double totalMass;
         public double reEntryMaximumFlux;
+
+        // relative to the vessel's motion frame
+        public Vector3d velocity;
+        public Vector3d angularVelocity;
     }
 
     public struct OwnedPartRef : IBufferElementData

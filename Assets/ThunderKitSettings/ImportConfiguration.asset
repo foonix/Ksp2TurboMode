@@ -106,6 +106,7 @@ MonoBehaviour:
   enabled: 1
   assemblyNames:
   - Assembly-CSharp.dll
+  removeReadonly: 0
   NStripExecutable: {fileID: 102900000, guid: 39e2644fdd2b31844bb745cba95889bb, type: 3}
 --- !u!114 &2821614204373625064
 MonoBehaviour:

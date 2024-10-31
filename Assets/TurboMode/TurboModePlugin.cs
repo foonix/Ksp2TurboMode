@@ -97,6 +97,7 @@ namespace TurboMode
                 hooks.AddRange(SelectivePhysicsAutoSync.MakeHooks());
             if (shutoffUnusedWindowHierarchies.Value)
                 hooks.AddRange(ShutoffUnusedWindowHierarchies.MakeHooks());
+            hooks.AddRange(FlowRequests.MakeHooks());
             // BurstMath is handled in prepatcher.
             // MiscCleanups is handled in prepatcher.
             Application.quitting += BurstifyTransformFrames.DisposeCachedAllocations;

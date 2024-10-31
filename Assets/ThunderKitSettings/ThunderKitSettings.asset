@@ -12,11 +12,11 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: f9057f7f601990a4883b2cb295c4f43e, type: 3}
   m_Name: ThunderKitSettings
   m_EditorClassIdentifier: 
-  FirstLoad: 1
-  ShowOnStartup: 0
+  FirstLoad: 0
+  ShowOnStartup: 1
   GameExecutable: KSP2_x64.exe
   GamePath: F:\games\ksp2\KSP2-0.2.2.0
-  Is64Bit: 1
+  Is64Bit: 0
   DateTimeFormat: HH:mm:ss:fff
   CreatedDateFormat: MMM/dd HH:mm:ss
   ShowLogWindow: 1
@@ -31,4 +31,4 @@ MonoBehaviour:
   SelectedManifest: {fileID: 0}
   QuickAccessPipelines: []
   QuickAccessManifests: []
-  ImportConfiguration: {fileID: 11400000, guid: 121c651a7d7ee3148a9e8c63e24e9713, type: 2}
+  ImportConfiguration: {fileID: 0}

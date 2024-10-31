@@ -10,13 +10,13 @@
       "hash": "eee1cb773e0dc5ee0bdf7eb4cd299ee463ea3368"
     },
     "com.passivepicasso.thunderkit": {
-      "version": "https://github.com/PassivePicasso/ThunderKit.git#8.0.6",
+      "version": "https://github.com/PassivePicasso/ThunderKit.git#9.0.1",
       "depth": 0,
       "source": "git",
       "dependencies": {
         "com.unity.scriptablebuildpipeline": "1.16.1"
       },
-      "hash": "c63a5c279e98d1e888bad5f3038db94a4140c39d"
+      "hash": "9501deb9cb6b62d45cfa56f0c5629e3c8366d1f7"
     },
     "com.unity.addressables": {
       "version": "1.21.21",
@@ -33,7 +33,7 @@
       "url": "https://packages.unity.com"
     },
     "com.unity.burst": {
-      "version": "1.8.17",
+      "version": "1.8.18",
       "depth": 0,
       "source": "registry",
       "dependencies": {

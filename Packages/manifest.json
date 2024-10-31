@@ -1,9 +1,9 @@
 {
   "dependencies": {
     "com.passivepicasso.bundlekit": "git@github.com:foonix/BundleKit.git#0.0.1",
-    "com.passivepicasso.thunderkit": "https://github.com/PassivePicasso/ThunderKit.git#8.0.6",
+    "com.passivepicasso.thunderkit": "https://github.com/PassivePicasso/ThunderKit.git#9.0.1",
     "com.unity.addressables": "1.21.21",
-    "com.unity.burst": "1.8.17",
+    "com.unity.burst": "1.8.18",
     "com.unity.collab-proxy": "2.3.1",
     "com.unity.collections": "2.2.1",
     "com.unity.entities": "1.0.16",

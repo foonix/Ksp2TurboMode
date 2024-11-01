@@ -235,7 +235,8 @@ namespace TurboMode.Patches
                 }
                 else
                 {
-                    managedRequestWrapper.UpdateStateDeliveryRejected(tickUniversalTime, tickDeltaTime, rfrm._failedResources);
+                    //managedRequestWrapper.UpdateStateDeliveryRejected(tickUniversalTime, tickDeltaTime, rfrm._failedResources);
+                    UpdateStateDeliveryRejected(managedRequestWrapper, tickUniversalTime, tickDeltaTime, rfrm._failedResources);
                 }
             }
         }
@@ -554,6 +555,19 @@ namespace TurboMode.Patches
             }
 
             return totalUnitsToConsume;
+        }
+        #endregion
+
+        #region ManagedRequestWrapper "methods"
+        // changed:
+        // pass failedResources directly to avoid list copy.
+        static void UpdateStateDeliveryRejected(ManagedRequestWrapper wrapper, double tickUniversalTime, double tickDeltaTime, List<ResourceDefinitionID> failedResources)
+        {
+            wrapper.RequestResolutionState.LastTickUniversalTime = tickUniversalTime;
+            wrapper.RequestResolutionState.LastTickDeltaTime = tickDeltaTime;
+            wrapper.RequestResolutionState.WasLastTickDeliveryAccepted = false;
+            wrapper.RequestResolutionState.LastTickDeliveryNormalized = 0.0;
+            wrapper.RequestResolutionState.ResourcesNotProcessed = failedResources;
         }
         #endregion
     }

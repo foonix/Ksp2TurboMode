@@ -21,8 +21,9 @@ namespace TurboMode.Patches
         private static readonly ReflectionUtil.EventHelper<ResourceFlowRequestManager, Action> requestsUpdatedHelper
             = new(nameof(ResourceFlowRequestManager.RequestsUpdated));
 
-        private static readonly ProfilerMarker updateFlowRequestsMarker = new("TM FlowRequests.UpdateFlowRequests");
-        private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests.RequestsUpdated");
+        private static readonly ProfilerMarker updateFlowRequestsMarker = new("TM FlowRequests.UpdateFlowRequests()");
+        private static readonly ProfilerMarker singleRequestMarker = new("TM FlowRequests.ProcessActiveRequests() (single)");
+        private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests RequestsUpdated (event)");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -91,6 +92,8 @@ namespace TurboMode.Patches
             //for (int i = 0; i < orderedRequests.Count; i++)
             foreach (ManagedRequestWrapper managedRequestWrapper in orderedRequests)
             {
+                using var marker = singleRequestMarker.Auto();
+
                 //ManagedRequestWrapper managedRequestWrapper = orderedRequests[i];
                 managedRequestWrapper.RequestResolutionState.LastTickUniversalTime = tickUniversalTime;
                 managedRequestWrapper.RequestResolutionState.LastTickDeltaTime = tickDeltaTime;

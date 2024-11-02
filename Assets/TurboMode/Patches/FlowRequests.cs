@@ -18,12 +18,20 @@ namespace TurboMode.Patches
     /// </summary>
     public class FlowRequests
     {
+        private readonly ResourceFlowRequestManager rfrm;
+
         private static readonly ReflectionUtil.EventHelper<ResourceFlowRequestManager, Action> requestsUpdatedHelper
             = new(nameof(ResourceFlowRequestManager.RequestsUpdated));
+
+        // The field is added during prepatch, but I don't have a way to compile against it (yet)
+        // So slum it with field accessor for now.
+        private static readonly ReflectionUtil.FieldHelper<ResourceFlowRequestManager, FlowRequests> resourceFlowDataField
+            = new(typeof(ResourceFlowRequestManager).GetField("turboModeFlowRequestData"));
 
         private static readonly ProfilerMarker updateFlowRequestsMarker = new("TM FlowRequests.UpdateFlowRequests()");
         private static readonly ProfilerMarker singleRequestMarker = new("TM FlowRequests.ProcessActiveRequests() (single)");
         private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests RequestsUpdated (event)");
+        private static readonly ProfilerMarker containerChangedMarker = new("TM FlowRequests ContainerChanged (Message)");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -33,14 +41,30 @@ namespace TurboMode.Patches
                 ),
         };
 
-        #region ResourceFlowRequestManager "methods"
-        public static void UpdateFlowRequests(
+        private FlowRequests(ResourceFlowRequestManager rfrm)
+        {
+            this.rfrm = rfrm;
+        }
+
+        static void UpdateFlowRequests(
             Action<ResourceFlowRequestManager, double, double> orig,
             ResourceFlowRequestManager rfrm,
             double tickUniversalTime, double tickDeltaTime)
         {
             using var marker = updateFlowRequestsMarker.Auto();
+            var data = resourceFlowDataField.Get(rfrm);
+            if (data is null)
+            {
+                data = new FlowRequests(rfrm);
+                resourceFlowDataField.Set(rfrm, data);
+            }
+            data.UpdateFlowRequests(tickUniversalTime, tickDeltaTime);
+        }
 
+
+        #region ResourceFlowRequestManager "methods"
+        void UpdateFlowRequests(double tickUniversalTime, double tickDeltaTime)
+        {
             //if (GameManager.Instance != null && GameManager.Instance.Game != null && GameManager.Instance.Game.SessionManager != null)
             //{
             //rfrm._infiniteFuelEnabled = GameManager.Instance.Game.SessionManager.IsDifficultyOptionEnabled("InfiniteFuel");
@@ -85,7 +109,7 @@ namespace TurboMode.Patches
         }
 
         // changes: for -> foreach
-        private static void ProcessActiveRequests(ResourceFlowRequestManager rfrm,
+        private void ProcessActiveRequests(ResourceFlowRequestManager rfrm,
             List<ManagedRequestWrapper> orderedRequests,
             double tickUniversalTime, double tickDeltaTime)
         {
@@ -249,7 +273,7 @@ namespace TurboMode.Patches
         // changed:
         // avoid interface enumerator allocations
         // unpack loops in stack
-        static double GetResourceCapacityUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID)
+        double GetResourceCapacityUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID)
         {
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
@@ -267,7 +291,7 @@ namespace TurboMode.Patches
         // changed:
         // avoid interface enumerator allocation
         // unpack loops in stack
-        static double GetResourceStoredUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, bool includePreProcessed)
+        double GetResourceStoredUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, bool includePreProcessed)
         {
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
@@ -293,7 +317,7 @@ namespace TurboMode.Patches
 
         // changed:
         // for -> foreach
-        static double AddResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToAdd)
+        double AddResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToAdd)
         {
             double remaining = totalUnitsToAdd;
             //int num2 = rcgs.GroupsInSequence.Count - 1;
@@ -309,7 +333,7 @@ namespace TurboMode.Patches
             return totalUnitsToAdd - remaining;
         }
 
-        static double StorePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToStore)
+        double StorePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToStore)
         {
             double remaining = totalUnitsToStore;
             //int num2 = rcgs.GroupsInSequence.Count - 1;
@@ -328,7 +352,7 @@ namespace TurboMode.Patches
         // changed:
         // avoid interface enumerator allocation
         // unpack loops in stack
-        static void ResetPreProcessedResources(ResourceContainerGroupSequence rcgs)
+        void ResetPreProcessedResources(ResourceContainerGroupSequence rcgs)
         {
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
@@ -343,7 +367,7 @@ namespace TurboMode.Patches
         // changed:
         // for -> foreach
         // Avoid interface enumerator allocation that would create.
-        static double ConsumePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToConsume)
+        double ConsumePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToConsume)
         {
             double remaining = totalUnitsToConsume;
             //int i = 0;
@@ -366,7 +390,7 @@ namespace TurboMode.Patches
         // changed:
         // for -> foreach
         // Avoid interface enumerator allocation that would create.
-        static double RemoveResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToRemove)
+        double RemoveResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToRemove)
         {
             double remaining = totalUnitsToRemove;
             //int i = 0;
@@ -391,7 +415,7 @@ namespace TurboMode.Patches
         // changed:
         // for -> foreach
         // Avoid interface enumerator allocation that would create.
-        static double RemoveResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToRemove)
+        double RemoveResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToRemove)
         {
             if (totalUnitsToRemove == 0.0)
             {
@@ -411,7 +435,8 @@ namespace TurboMode.Patches
             {
                 double resourceStoredUnits2 = container.GetResourceStoredUnits(resourceID);
                 double totalUnitsToRemove2 = num * resourceStoredUnits2;
-                container.RemoveResourceUnits(resourceID, totalUnitsToRemove2);
+                //container.RemoveResourceUnits(resourceID, totalUnitsToRemove2);
+                RemoveResourceUnits(container, resourceID, totalUnitsToRemove2);
             }
 
             return totalUnitsToRemove;
@@ -421,7 +446,7 @@ namespace TurboMode.Patches
         // changed:
         // for -> foreach
         // Avoid interface enumerator allocation that would create.
-        static double GetResourceStoredUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
+        double GetResourceStoredUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
         {
             double stored = 0.0;
             foreach (ResourceContainer container in rcg._containers)
@@ -432,7 +457,7 @@ namespace TurboMode.Patches
             return stored;
         }
 
-        static double AddResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceId, double totalUnitsToAdd)
+        double AddResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceId, double totalUnitsToAdd)
         {
             if (totalUnitsToAdd == 0.0)
             {
@@ -458,13 +483,14 @@ namespace TurboMode.Patches
             {
                 double resourceEmptyUnits2 = container.GetResourceEmptyUnits(resourceId);
                 double totalUnitsToAdd2 = num * resourceEmptyUnits2;
-                container.AddResourceUnits(resourceId, totalUnitsToAdd2);
+                //container.AddResourceUnits(resourceId, totalUnitsToAdd2);
+                AddResourceUnits(container, resourceId, totalUnitsToAdd2);
             }
 
             return totalUnitsToAdd;
         }
 
-        static double FillResourceToCapacity(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
+        double FillResourceToCapacity(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
         {
             double added = 0.0;
             foreach (ResourceContainer container in rcg._containers)
@@ -475,7 +501,7 @@ namespace TurboMode.Patches
             return added;
         }
 
-        static double FillPreProcessedResourceToCapacity(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
+        double FillPreProcessedResourceToCapacity(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
         {
             double filled = 0.0;
             foreach (ResourceContainer container in rcg._containers)
@@ -488,7 +514,7 @@ namespace TurboMode.Patches
 
         // changed:
         // merge group capacity/stored/preprocess getters into single pass.
-        static double StorePreProcessedResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToStore)
+        double StorePreProcessedResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToStore)
         {
             if (totalUnitsToStore == 0.0)
             {
@@ -526,7 +552,7 @@ namespace TurboMode.Patches
         // for -> foreach
         // Avoid interface enumerator allocation that would create.
         // fetch container preprocess/stored units for the same container in a single pass over the group.
-        static double ConsumePreProcessedResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToConsume)
+        double ConsumePreProcessedResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToConsume)
         {
             if (totalUnitsToConsume == 0.0)
             {
@@ -554,7 +580,8 @@ namespace TurboMode.Patches
                 double resourcePreProcessedUnits2 = container.GetResourcePreProcessedUnits(resourceID);
                 resourcePreProcessedUnits2 += container.GetResourceStoredUnits(resourceID);
                 double totalUnitsToConsume2 = num * resourcePreProcessedUnits2;
-                container.ConsumePreProcessedResourceUnits(resourceID, totalUnitsToConsume2);
+                //container.ConsumePreProcessedResourceUnits(resourceID, totalUnitsToConsume2);
+                AddResourceUnits(container, resourceID, totalUnitsToConsume2);
             }
 
             return totalUnitsToConsume;
@@ -564,13 +591,61 @@ namespace TurboMode.Patches
         #region ManagedRequestWrapper "methods"
         // changed:
         // pass failedResources directly to avoid list copy.
-        static void UpdateStateDeliveryRejected(ManagedRequestWrapper wrapper, double tickUniversalTime, double tickDeltaTime, List<ResourceDefinitionID> failedResources)
+        void UpdateStateDeliveryRejected(ManagedRequestWrapper wrapper, double tickUniversalTime, double tickDeltaTime, List<ResourceDefinitionID> failedResources)
         {
             wrapper.RequestResolutionState.LastTickUniversalTime = tickUniversalTime;
             wrapper.RequestResolutionState.LastTickDeltaTime = tickDeltaTime;
             wrapper.RequestResolutionState.WasLastTickDeliveryAccepted = false;
             wrapper.RequestResolutionState.LastTickDeliveryNormalized = 0.0;
             wrapper.RequestResolutionState.ResourcesNotProcessed = failedResources;
+        }
+        #endregion
+
+        #region ResourceContainer "methods"
+        double AddResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToAdd)
+        {
+            int dataIndexFromID = container.GetDataIndexFromID(resourceID);
+            if (!container.IsValidDataIndex(dataIndexFromID))
+            {
+                return 0.0;
+            }
+            double capacity = container._capacityUnitsLookup[dataIndexFromID];
+            double stored = container._storedUnitsLookup[dataIndexFromID];
+            double freeSpace = capacity - stored;
+            if (freeSpace <= totalUnitsToAdd)
+            {
+                container._storedUnitsLookup[dataIndexFromID] = capacity;
+                using var fullMarker = containerChangedMarker.Auto();
+                container.InternalPublishContainerChangedMessage(resourceID);
+                return freeSpace;
+            }
+            totalUnitsToAdd = Math.Abs(totalUnitsToAdd);
+            container._storedUnitsLookup[dataIndexFromID] += totalUnitsToAdd;
+            using var marker = containerChangedMarker.Auto();
+            container.InternalPublishContainerChangedMessage(resourceID);
+            return totalUnitsToAdd;
+        }
+
+        double RemoveResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToRemove)
+        {
+            int dataIndexFromID = container.GetDataIndexFromID(resourceID);
+            if (!container.IsValidDataIndex(dataIndexFromID))
+            {
+                return 0.0;
+            }
+            double num = container._storedUnitsLookup[dataIndexFromID];
+            if (num <= totalUnitsToRemove)
+            {
+                container._storedUnitsLookup[dataIndexFromID] = 0.0;
+                using var fullMarker = containerChangedMarker.Auto();
+                container.InternalPublishContainerChangedMessage(resourceID);
+                return num;
+            }
+            totalUnitsToRemove = Math.Abs(totalUnitsToRemove);
+            container._storedUnitsLookup[dataIndexFromID] -= totalUnitsToRemove;
+            using var marker = containerChangedMarker.Auto();
+            container.InternalPublishContainerChangedMessage(resourceID);
+            return totalUnitsToRemove;
         }
         #endregion
     }

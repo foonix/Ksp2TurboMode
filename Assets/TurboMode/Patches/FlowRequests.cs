@@ -635,7 +635,7 @@ namespace TurboMode.Patches
 
                 double totalUnitsToConsume2 = num * resourcePreProcessedUnits2;
                 //container.ConsumePreProcessedResourceUnits(resourceID, totalUnitsToConsume2);
-                AddResourceUnits(container, resourceID, totalUnitsToConsume2);
+                ConsumePreProcessedResourceUnits(container, resourceID, totalUnitsToConsume2);
             }
 
             return totalUnitsToConsume;
@@ -704,6 +704,29 @@ namespace TurboMode.Patches
             //container.InternalPublishContainerChangedMessage(resourceID);
             MarkContainerChanged(container, resourceID);
             return totalUnitsToRemove;
+        }
+
+        public double ConsumePreProcessedResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToConsume)
+        {
+            int dataIndexFromID = container.GetDataIndexFromID(resourceID);
+            if (dataIndexFromID == -1)
+            {
+                return 0.0;
+            }
+
+            double stored = container._storedUnitsLookup[dataIndexFromID];
+            double preprocessed = container._preprocessedUnitsLookup[dataIndexFromID];
+            var available = stored - preprocessed;
+            if (available <= totalUnitsToConsume)
+            {
+                container._preprocessedUnitsLookup[dataIndexFromID] += available - stored;
+                return stored;
+            }
+
+            totalUnitsToConsume = Math.Abs(totalUnitsToConsume);
+            container._preprocessedUnitsLookup[dataIndexFromID] += totalUnitsToConsume - stored;
+            //IGAssert.IsTrue(_preprocessedUnitsLookup[dataIndexFromID] <= _capacityUnitsLookup[dataIndexFromID], "Remove Preprocessed Resource total should always be <= capacity");
+            return totalUnitsToConsume;
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]

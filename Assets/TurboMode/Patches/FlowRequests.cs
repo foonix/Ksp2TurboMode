@@ -91,9 +91,9 @@ namespace TurboMode.Patches
 
         void SendContainersChangedMessages()
         {
+            using var marker = containerChangedMarker.Auto();
             foreach (var note in containersChanged)
             {
-                using var marker = containerChangedMarker.Auto();
                 note.container.InternalPublishContainerChangedMessage(note.resourceId);
             }
             containersChanged.Clear();

@@ -19,6 +19,7 @@ namespace TurboMode.Patches
     public class FlowRequests
     {
         private readonly ResourceFlowRequestManager rfrm;
+        private readonly HashSet<ContainerResourceChangedNote> containersChanged = new();
 
         private static readonly ReflectionUtil.EventHelper<ResourceFlowRequestManager, Action> requestsUpdatedHelper
             = new(nameof(ResourceFlowRequestManager.RequestsUpdated));
@@ -61,6 +62,42 @@ namespace TurboMode.Patches
             data.UpdateFlowRequests(tickUniversalTime, tickDeltaTime);
         }
 
+        #region container change message collation
+        struct ContainerResourceChangedNote : IEquatable<ContainerResourceChangedNote>
+        {
+            public ResourceDefinitionID resourceId;
+            public ResourceContainer container;
+
+            public readonly bool Equals(ContainerResourceChangedNote other)
+                => resourceId == other.resourceId && container == other.container;
+
+            public override readonly int GetHashCode()
+                => HashCode.Combine(resourceId, container);
+        }
+
+        void MarkContainerChanged(ResourceContainer container, ResourceDefinitionID resourceId)
+        {
+            // Possibly could save the original value to avoid calling
+            // if net level change is zero.  E.G., a full battery loses a small amount of EC
+            // just to be immediately filled again in the same update.
+            var note = new ContainerResourceChangedNote()
+            {
+                container = container,
+                resourceId = resourceId,
+            };
+            containersChanged.Add(note);
+        }
+
+        void SendContainersChangedMessages()
+        {
+            foreach (var note in containersChanged)
+            {
+                using var marker = containerChangedMarker.Auto();
+                note.container.InternalPublishContainerChangedMessage(note.resourceId);
+            }
+            containersChanged.Clear();
+        }
+        #endregion
 
         #region ResourceFlowRequestManager "methods"
         void UpdateFlowRequests(double tickUniversalTime, double tickDeltaTime)
@@ -101,6 +138,9 @@ namespace TurboMode.Patches
             }
             //rfrm.ProcessActiveRequests(rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
             ProcessActiveRequests(rfrm, rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
+
+            SendContainersChangedMessages();
+
             if (rfrm._orderedRequests.Count > 0)
             {
                 using var requestsUpdated = requestsUpdatedMarker.Auto();
@@ -615,14 +655,16 @@ namespace TurboMode.Patches
             if (freeSpace <= totalUnitsToAdd)
             {
                 container._storedUnitsLookup[dataIndexFromID] = capacity;
-                using var fullMarker = containerChangedMarker.Auto();
-                container.InternalPublishContainerChangedMessage(resourceID);
+                //using var fullMarker = containerChangedMarker.Auto();
+                //container.InternalPublishContainerChangedMessage(resourceID);
+                MarkContainerChanged(container, resourceID);
                 return freeSpace;
             }
             totalUnitsToAdd = Math.Abs(totalUnitsToAdd);
             container._storedUnitsLookup[dataIndexFromID] += totalUnitsToAdd;
-            using var marker = containerChangedMarker.Auto();
-            container.InternalPublishContainerChangedMessage(resourceID);
+            //using var marker = containerChangedMarker.Auto();
+            //container.InternalPublishContainerChangedMessage(resourceID);
+            MarkContainerChanged(container, resourceID);
             return totalUnitsToAdd;
         }
 
@@ -633,18 +675,20 @@ namespace TurboMode.Patches
             {
                 return 0.0;
             }
-            double num = container._storedUnitsLookup[dataIndexFromID];
-            if (num <= totalUnitsToRemove)
+            double stored = container._storedUnitsLookup[dataIndexFromID];
+            if (stored <= totalUnitsToRemove)
             {
                 container._storedUnitsLookup[dataIndexFromID] = 0.0;
-                using var fullMarker = containerChangedMarker.Auto();
-                container.InternalPublishContainerChangedMessage(resourceID);
-                return num;
+                //using var fullMarker = containerChangedMarker.Auto();
+                //container.InternalPublishContainerChangedMessage(resourceID);
+                MarkContainerChanged(container, resourceID);
+                return stored;
             }
             totalUnitsToRemove = Math.Abs(totalUnitsToRemove);
             container._storedUnitsLookup[dataIndexFromID] -= totalUnitsToRemove;
-            using var marker = containerChangedMarker.Auto();
-            container.InternalPublishContainerChangedMessage(resourceID);
+            //using var marker = containerChangedMarker.Auto();
+            //container.InternalPublishContainerChangedMessage(resourceID);
+            MarkContainerChanged(container, resourceID);
             return totalUnitsToRemove;
         }
         #endregion

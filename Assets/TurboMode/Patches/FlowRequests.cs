@@ -3,6 +3,7 @@ using KSP.Sim.ResourceSystem;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using Unity.Profiling;
 using UnityEngine;
 using static KSP.Sim.ResourceSystem.ResourceFlowRequestManager;
@@ -321,7 +322,8 @@ namespace TurboMode.Patches
                 //total += group.GetResourceCapacityUnits(resourceID);
                 foreach (ResourceContainer container in group._containers)
                 {
-                    total += container.GetResourceCapacityUnits(resourceID);
+                    //total += container.GetResourceCapacityUnits(resourceID);
+                    total += GetContainedValue(container, resourceID, container._capacityUnitsLookup);
                 }
             }
 
@@ -339,7 +341,8 @@ namespace TurboMode.Patches
                 //total += group.GetResourceStoredUnits(resourceID);
                 foreach (ResourceContainer container in group._containers)
                 {
-                    total += container.GetResourceStoredUnits(resourceID);
+                    //total += container.GetResourceStoredUnits(resourceID);
+                    total += GetContainedValue(container, resourceID, container._storedUnitsLookup);
                 }
 
                 if (includePreProcessed)
@@ -347,7 +350,8 @@ namespace TurboMode.Patches
                     //total -= group.GetResourcePreProcessedUnits(resourceID);
                     foreach (ResourceContainer container in group._containers)
                     {
-                        total -= container.GetResourcePreProcessedUnits(resourceID);
+                        //total -= container.GetResourcePreProcessedUnits(resourceID);
+                        total -= GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
                     }
                 }
             }
@@ -473,7 +477,8 @@ namespace TurboMode.Patches
             double num = totalUnitsToRemove / resourceStoredUnits;
             foreach (ResourceContainer container in rcg._containers)
             {
-                double resourceStoredUnits2 = container.GetResourceStoredUnits(resourceID);
+                //double resourceStoredUnits2 = container.GetResourceStoredUnits(resourceID);
+                double resourceStoredUnits2 = GetContainedValue(container, resourceID, container._storedUnitsLookup);
                 double totalUnitsToRemove2 = num * resourceStoredUnits2;
                 //container.RemoveResourceUnits(resourceID, totalUnitsToRemove2);
                 RemoveResourceUnits(container, resourceID, totalUnitsToRemove2);
@@ -491,7 +496,8 @@ namespace TurboMode.Patches
             double stored = 0.0;
             foreach (ResourceContainer container in rcg._containers)
             {
-                stored += container.GetResourceStoredUnits(resourceID);
+                //stored += container.GetResourceStoredUnits(resourceID);
+                stored += GetContainedValue(container, resourceID, container._storedUnitsLookup);
             }
 
             return stored;
@@ -521,7 +527,7 @@ namespace TurboMode.Patches
             double num = totalUnitsToAdd / resourceEmptyUnits;
             foreach (ResourceContainer container in rcg._containers)
             {
-                double resourceEmptyUnits2 = container.GetResourceEmptyUnits(resourceId);
+                double resourceEmptyUnits2 = container.GetResourceEmptyUnits(resourceId, false);
                 double totalUnitsToAdd2 = num * resourceEmptyUnits2;
                 //container.AddResourceUnits(resourceId, totalUnitsToAdd2);
                 AddResourceUnits(container, resourceId, totalUnitsToAdd2);
@@ -565,9 +571,12 @@ namespace TurboMode.Patches
             double num = 0;
             foreach (var container in rcg._containers)
             {
-                num += container.GetResourceCapacityUnits(resourceID)
-                    - container.GetResourceStoredUnits(resourceID)
-                    + container.GetResourcePreProcessedUnits(resourceID);
+                //num += container.GetResourceCapacityUnits(resourceID)
+                //    - container.GetResourceStoredUnits(resourceID)
+                //    + container.GetResourcePreProcessedUnits(resourceID);
+                num += GetContainedValue(container, resourceID, container._capacityUnitsLookup)
+                    - GetContainedValue(container, resourceID, container._storedUnitsLookup)
+                    + GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
             }
 
             if (num <= totalUnitsToStore)
@@ -605,8 +614,10 @@ namespace TurboMode.Patches
             double resourcePreProcessedUnits = 0;
             foreach (ResourceContainer container in rcg._containers)
             {
-                resourcePreProcessedUnits += container.GetResourcePreProcessedUnits(resourceID);
-                resourcePreProcessedUnits += container.GetResourceStoredUnits(resourceID);
+                //resourcePreProcessedUnits += container.GetResourcePreProcessedUnits(resourceID);
+                //resourcePreProcessedUnits += container.GetResourceStoredUnits(resourceID);
+                resourcePreProcessedUnits += GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
+                resourcePreProcessedUnits += GetContainedValue(container, resourceID, container._storedUnitsLookup);
             }
 
             if (resourcePreProcessedUnits <= totalUnitsToConsume)
@@ -617,8 +628,11 @@ namespace TurboMode.Patches
             double num = totalUnitsToConsume / resourcePreProcessedUnits;
             foreach (ResourceContainer container in rcg._containers)
             {
-                double resourcePreProcessedUnits2 = container.GetResourcePreProcessedUnits(resourceID);
-                resourcePreProcessedUnits2 += container.GetResourceStoredUnits(resourceID);
+                //double resourcePreProcessedUnits2 = container.GetResourcePreProcessedUnits(resourceID);
+                //resourcePreProcessedUnits2 += container.GetResourceStoredUnits(resourceID);
+                double resourcePreProcessedUnits2 = GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
+                resourcePreProcessedUnits2 += GetContainedValue(container, resourceID, container._storedUnitsLookup);
+
                 double totalUnitsToConsume2 = num * resourcePreProcessedUnits2;
                 //container.ConsumePreProcessedResourceUnits(resourceID, totalUnitsToConsume2);
                 AddResourceUnits(container, resourceID, totalUnitsToConsume2);
@@ -644,24 +658,24 @@ namespace TurboMode.Patches
         #region ResourceContainer "methods"
         double AddResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToAdd)
         {
-            int dataIndexFromID = container.GetDataIndexFromID(resourceID);
-            if (!container.IsValidDataIndex(dataIndexFromID))
+            int index = container.GetDataIndexFromID(resourceID);
+            if (index == -1)
             {
                 return 0.0;
             }
-            double capacity = container._capacityUnitsLookup[dataIndexFromID];
-            double stored = container._storedUnitsLookup[dataIndexFromID];
+            double capacity = container._capacityUnitsLookup[index];
+            double stored = container._storedUnitsLookup[index];
             double freeSpace = capacity - stored;
             if (freeSpace <= totalUnitsToAdd)
             {
-                container._storedUnitsLookup[dataIndexFromID] = capacity;
+                container._storedUnitsLookup[index] = capacity;
                 //using var fullMarker = containerChangedMarker.Auto();
                 //container.InternalPublishContainerChangedMessage(resourceID);
                 MarkContainerChanged(container, resourceID);
                 return freeSpace;
             }
             totalUnitsToAdd = Math.Abs(totalUnitsToAdd);
-            container._storedUnitsLookup[dataIndexFromID] += totalUnitsToAdd;
+            container._storedUnitsLookup[index] += totalUnitsToAdd;
             //using var marker = containerChangedMarker.Auto();
             //container.InternalPublishContainerChangedMessage(resourceID);
             MarkContainerChanged(container, resourceID);
@@ -670,26 +684,41 @@ namespace TurboMode.Patches
 
         double RemoveResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToRemove)
         {
-            int dataIndexFromID = container.GetDataIndexFromID(resourceID);
-            if (!container.IsValidDataIndex(dataIndexFromID))
+            int index = container.GetDataIndexFromID(resourceID);
+            if (index == -1)
             {
                 return 0.0;
             }
-            double stored = container._storedUnitsLookup[dataIndexFromID];
+            double stored = container._storedUnitsLookup[index];
             if (stored <= totalUnitsToRemove)
             {
-                container._storedUnitsLookup[dataIndexFromID] = 0.0;
+                container._storedUnitsLookup[index] = 0.0;
                 //using var fullMarker = containerChangedMarker.Auto();
                 //container.InternalPublishContainerChangedMessage(resourceID);
                 MarkContainerChanged(container, resourceID);
                 return stored;
             }
             totalUnitsToRemove = Math.Abs(totalUnitsToRemove);
-            container._storedUnitsLookup[dataIndexFromID] -= totalUnitsToRemove;
+            container._storedUnitsLookup[index] -= totalUnitsToRemove;
             //using var marker = containerChangedMarker.Auto();
             //container.InternalPublishContainerChangedMessage(resourceID);
             MarkContainerChanged(container, resourceID);
             return totalUnitsToRemove;
+        }
+
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        double GetContainedValue(ResourceContainer container, ResourceDefinitionID resourceID, List<double> storage)
+        {
+            int index = container.GetDataIndexFromID(resourceID);
+
+            // This bounds check may not even be necessary.  If the container doesn't have the resource, it might not be in the group.
+            // But leaving it here because I can't measure a time difference.
+            if (index == -1)
+            {
+                return 0;
+            }
+
+            return storage[index];
         }
         #endregion
     }

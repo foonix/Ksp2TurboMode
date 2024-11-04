@@ -103,19 +103,10 @@ namespace TurboMode.Patches
         #region ResourceFlowRequestManager "methods"
         void UpdateFlowRequests(double tickUniversalTime, double tickDeltaTime)
         {
-            //if (GameManager.Instance != null && GameManager.Instance.Game != null && GameManager.Instance.Game.SessionManager != null)
-            //{
-            //rfrm._infiniteFuelEnabled = GameManager.Instance.Game.SessionManager.IsDifficultyOptionEnabled("InfiniteFuel");
-            //rfrm._infiniteECEnabled = GameManager.Instance.Game.SessionManager.IsDifficultyOptionEnabled("InfinitePower");
             var sessionManager = GameManager.Instance.Game.SessionManager;
             rfrm._infiniteFuelEnabled = sessionManager.IsDifficultyOptionEnabled("InfiniteFuel");
             rfrm._infiniteECEnabled = sessionManager.IsDifficultyOptionEnabled("InfinitePower");
-            //}
-            //else
-            //{
-            //    rfrm._infiniteFuelEnabled = false;
-            //    rfrm._infiniteECEnabled = false;
-            //}
+
             rfrm._orderedRequests.Clear();
             foreach (ResourceFlowRequestHandle activeRequest in rfrm._activeRequests)
             {
@@ -137,7 +128,6 @@ namespace TurboMode.Patches
                     rfrm.CreateRequestContainerGroup(instruction);
                 }
             }
-            //rfrm.ProcessActiveRequests(rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
             ProcessActiveRequests(rfrm, rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
 
             SendContainersChangedMessages();
@@ -154,12 +144,10 @@ namespace TurboMode.Patches
             List<ManagedRequestWrapper> orderedRequests,
             double tickUniversalTime, double tickDeltaTime)
         {
-            //for (int i = 0; i < orderedRequests.Count; i++)
             foreach (ManagedRequestWrapper managedRequestWrapper in orderedRequests)
             {
                 using var marker = singleRequestMarker.Auto();
 
-                //ManagedRequestWrapper managedRequestWrapper = orderedRequests[i];
                 managedRequestWrapper.RequestResolutionState.LastTickUniversalTime = tickUniversalTime;
                 managedRequestWrapper.RequestResolutionState.LastTickDeltaTime = tickDeltaTime;
                 bool fullyFulfilled = true;
@@ -167,9 +155,7 @@ namespace TurboMode.Patches
                 float percentageToMove = 1f;
                 rfrm._failedResources.Clear();
                 foreach (FlowInstructionConfig flowInstructionConfig in managedRequestWrapper.instructions)
-                //for (int j = 0; j < managedRequestWrapper.instructions.Count; j++)
                 {
-                    //FlowInstructionConfig flowInstructionConfig = managedRequestWrapper.instructions[j];
                     if (flowInstructionConfig.FlowUnitsTarget < 0.0)
                     {
                         fullyFulfilled = false;
@@ -185,9 +171,6 @@ namespace TurboMode.Patches
                     {
                         case FlowDirection.FLOW_INBOUND:
                             {
-                                //float availableCapacity = (float)flowInstructionConfig.ResourceContainerGroup.GetResourceCapacityUnits(flowInstructionConfig.FlowResource)
-                                //    - (float)flowInstructionConfig.ResourceContainerGroup.GetResourceStoredUnits(flowInstructionConfig.FlowResource, includePreProcessed: true);
-
                                 float availableCapacity = (float)GetResourceCapacityUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource)
                                     - (float)GetResourceStoredUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, true);
 
@@ -205,7 +188,6 @@ namespace TurboMode.Patches
 
                                 if (fullyFulfilled)
                                 {
-                                    //flowInstructionConfig.ResourceContainerGroup.StorePreProcessedResourceUnits(flowInstructionConfig.FlowResource, maxPerUpdate);
                                     StorePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, maxPerUpdate);
                                 }
                                 else if (partiallyFilled)
@@ -217,7 +199,6 @@ namespace TurboMode.Patches
                                     }
 
                                     percentageToMove = Mathf.Min(percentageToMove, b2);
-                                    //flowInstructionConfig.ResourceContainerGroup.StorePreProcessedResourceUnits(flowInstructionConfig.FlowResource, (float)maxPerUpdate * percentageToMove);
                                     StorePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, (float)maxPerUpdate * percentageToMove);
                                 }
 
@@ -225,7 +206,6 @@ namespace TurboMode.Patches
                             }
                         case FlowDirection.FLOW_OUTBOUND:
                             {
-                                //float storedUnits = (float)flowInstructionConfig.ResourceContainerGroup.GetResourceStoredUnits(flowInstructionConfig.FlowResource, includePreProcessed: true);
                                 float storedUnits = (float)GetResourceStoredUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, true);
                                 if (maxPerUpdate > (double)storedUnits)
                                 {
@@ -241,7 +221,6 @@ namespace TurboMode.Patches
 
                                 if (fullyFulfilled)
                                 {
-                                    //flowInstructionConfig.ResourceContainerGroup.ConsumePreProcessedResourceUnits(flowInstructionConfig.FlowResource, maxPerUpdate);
                                     ConsumePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, maxPerUpdate);
                                 }
                                 else if (partiallyFilled)
@@ -253,7 +232,6 @@ namespace TurboMode.Patches
                                     }
 
                                     percentageToMove = Mathf.Min(percentageToMove, b);
-                                    //flowInstructionConfig.ResourceContainerGroup.ConsumePreProcessedResourceUnits(flowInstructionConfig.FlowResource, (float)maxPerUpdate * unitsToMove);
                                     ConsumePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, (float)maxPerUpdate * percentageToMove);
                                 }
 
@@ -279,16 +257,13 @@ namespace TurboMode.Patches
                         switch (instruction.FlowDirection)
                         {
                             case FlowDirection.FLOW_INBOUND:
-                                //instruction.ResourceContainerGroup.AddResourceUnits(instruction.FlowResource, num6);
                                 AddResourceUnits(instruction.ResourceContainerGroup, instruction.FlowResource, num6);
                                 break;
                             case FlowDirection.FLOW_OUTBOUND:
-                                //instruction.ResourceContainerGroup.RemoveResourceUnits(instruction.FlowResource, num6);
                                 RemoveResourceUnits(instruction.ResourceContainerGroup, instruction.FlowResource, num6);
                                 break;
                         }
 
-                        //instruction.ResourceContainerGroup.ResetPreProcessedResources();
                         ResetPreProcessedResources(instruction.ResourceContainerGroup);
                     }
 
@@ -303,7 +278,6 @@ namespace TurboMode.Patches
                 }
                 else
                 {
-                    //managedRequestWrapper.UpdateStateDeliveryRejected(tickUniversalTime, tickDeltaTime, rfrm._failedResources);
                     UpdateStateDeliveryRejected(managedRequestWrapper, tickUniversalTime, tickDeltaTime, rfrm._failedResources);
                 }
             }
@@ -319,10 +293,8 @@ namespace TurboMode.Patches
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
-                //total += group.GetResourceCapacityUnits(resourceID);
                 foreach (ResourceContainer container in group._containers)
                 {
-                    //total += container.GetResourceCapacityUnits(resourceID);
                     total += GetContainedValue(container, resourceID, container._capacityUnitsLookup);
                 }
             }
@@ -338,19 +310,15 @@ namespace TurboMode.Patches
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
-                //total += group.GetResourceStoredUnits(resourceID);
                 foreach (ResourceContainer container in group._containers)
                 {
-                    //total += container.GetResourceStoredUnits(resourceID);
                     total += GetContainedValue(container, resourceID, container._storedUnitsLookup);
                 }
 
                 if (includePreProcessed)
                 {
-                    //total -= group.GetResourcePreProcessedUnits(resourceID);
                     foreach (ResourceContainer container in group._containers)
                     {
-                        //total -= container.GetResourcePreProcessedUnits(resourceID);
                         total -= GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
                     }
                 }
@@ -364,13 +332,8 @@ namespace TurboMode.Patches
         double AddResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToAdd)
         {
             double remaining = totalUnitsToAdd;
-            //int num2 = rcgs.GroupsInSequence.Count - 1;
-            //while (num2 >= 0 && remaining > 0.0)
             foreach (var group in rcgs._groupsInSequence)
             {
-                //ResourceContainerGroup resourceContainerGroup = rcgs.GroupsInSequence[num2];
-                //remaining -= group.AddResourceUnits(resourceID, remaining);
-                //num2--;
                 remaining -= AddResourceUnits(group, resourceID, remaining);
             }
 
@@ -380,13 +343,8 @@ namespace TurboMode.Patches
         double StorePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToStore)
         {
             double remaining = totalUnitsToStore;
-            //int num2 = rcgs.GroupsInSequence.Count - 1;
-            //while (num2 >= 0 && num > 0.0)
             foreach (var group in rcgs._groupsInSequence)
             {
-                //ResourceContainerGroup resourceContainerGroup = rcgs.GroupsInSequence[num2];
-                //remaining -= group.StorePreProcessedResourceUnits(resourceID, remaining);
-                //num2--;
                 remaining -= StorePreProcessedResourceUnits(group, resourceID, remaining);
             }
 
@@ -400,7 +358,6 @@ namespace TurboMode.Patches
         {
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
-                //group.ResetPreProcessedResources();
                 foreach (ResourceContainer container in group._containers)
                 {
                     container.ResetPreProcessedResources();
@@ -414,17 +371,13 @@ namespace TurboMode.Patches
         double ConsumePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToConsume)
         {
             double remaining = totalUnitsToConsume;
-            //int i = 0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
-            //for (int count = rcgs.GroupsInSequence.Count; i < count; i++)
             {
                 if (!(remaining > 0.0))
                 {
                     break;
                 }
 
-                //ResourceContainerGroup resourceContainerGroup = group;
-                //remaining -= group.ConsumePreProcessedResourceUnits(resourceID, remaining);
                 remaining -= ConsumePreProcessedResourceUnits(group, resourceID, remaining);
             }
 
@@ -437,8 +390,6 @@ namespace TurboMode.Patches
         double RemoveResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToRemove)
         {
             double remaining = totalUnitsToRemove;
-            //int i = 0;
-            //for (int count = rcgs.GroupsInSequence.Count; i < count; i++)
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
                 if (!(remaining > 0.0))
@@ -446,8 +397,6 @@ namespace TurboMode.Patches
                     break;
                 }
 
-                //ResourceContainerGroup group = rcgs.GroupsInSequence[i];
-                //remaining -= group.RemoveResourceUnits(resourceID, remaining);
                 remaining -= RemoveResourceUnits(group, resourceID, remaining);
             }
 
@@ -466,7 +415,6 @@ namespace TurboMode.Patches
                 return 0.0;
             }
 
-            //double resourceStoredUnits = rcg.GetResourceStoredUnits(resourceID);
             double resourceStoredUnits = GetResourceStoredUnits(rcg, resourceID);
             if (resourceStoredUnits <= totalUnitsToRemove)
             {
@@ -477,10 +425,8 @@ namespace TurboMode.Patches
             double num = totalUnitsToRemove / resourceStoredUnits;
             foreach (ResourceContainer container in rcg._containers)
             {
-                //double resourceStoredUnits2 = container.GetResourceStoredUnits(resourceID);
                 double resourceStoredUnits2 = GetContainedValue(container, resourceID, container._storedUnitsLookup);
                 double totalUnitsToRemove2 = num * resourceStoredUnits2;
-                //container.RemoveResourceUnits(resourceID, totalUnitsToRemove2);
                 RemoveResourceUnits(container, resourceID, totalUnitsToRemove2);
             }
 
@@ -496,7 +442,6 @@ namespace TurboMode.Patches
             double stored = 0.0;
             foreach (ResourceContainer container in rcg._containers)
             {
-                //stored += container.GetResourceStoredUnits(resourceID);
                 stored += GetContainedValue(container, resourceID, container._storedUnitsLookup);
             }
 
@@ -510,7 +455,6 @@ namespace TurboMode.Patches
                 return 0.0;
             }
 
-            //double resourceEmptyUnits = rcg.GetResourceEmptyUnits(resourceID);
             double resourceEmptyUnits = 0;
             foreach (ResourceContainer container in rcg._containers)
             {
@@ -519,7 +463,6 @@ namespace TurboMode.Patches
 
             if (resourceEmptyUnits <= totalUnitsToAdd)
             {
-                //rcg.FillResourceToCapacity(resourceID);
                 FillResourceToCapacity(rcg, resourceId);
                 return resourceEmptyUnits;
             }
@@ -529,7 +472,6 @@ namespace TurboMode.Patches
             {
                 double resourceEmptyUnits2 = container.GetResourceEmptyUnits(resourceId, false);
                 double totalUnitsToAdd2 = num * resourceEmptyUnits2;
-                //container.AddResourceUnits(resourceId, totalUnitsToAdd2);
                 AddResourceUnits(container, resourceId, totalUnitsToAdd2);
             }
 
@@ -567,13 +509,9 @@ namespace TurboMode.Patches
                 return 0.0;
             }
 
-            //double num = rcg.GetResourceCapacityUnits(resourceID) - rcg.GetResourceStoredUnits(resourceID) + rcg.GetResourcePreProcessedUnits(resourceID);
             double num = 0;
             foreach (var container in rcg._containers)
             {
-                //num += container.GetResourceCapacityUnits(resourceID)
-                //    - container.GetResourceStoredUnits(resourceID)
-                //    + container.GetResourcePreProcessedUnits(resourceID);
                 num += GetContainedValue(container, resourceID, container._capacityUnitsLookup)
                     - GetContainedValue(container, resourceID, container._storedUnitsLookup)
                     + GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
@@ -593,7 +531,6 @@ namespace TurboMode.Patches
                 container.StorePreProcessedResourceUnits(resourceID, totalUnitsToStore2);
             }
 
-            //IGAssert.IsTrue(totalUnitsToStore <= num, "Cannot store more preprocessed units than the capacity");
             return totalUnitsToStore;
         }
 
@@ -608,14 +545,10 @@ namespace TurboMode.Patches
                 return 0.0;
             }
 
-            //double resourcePreProcessedUnits = rcg.GetResourcePreProcessedUnits(resourceID);
-            //resourcePreProcessedUnits += rcg.GetResourceStoredUnits(resourceID);
             // what to call this variable?
             double resourcePreProcessedUnits = 0;
             foreach (ResourceContainer container in rcg._containers)
             {
-                //resourcePreProcessedUnits += container.GetResourcePreProcessedUnits(resourceID);
-                //resourcePreProcessedUnits += container.GetResourceStoredUnits(resourceID);
                 resourcePreProcessedUnits += GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
                 resourcePreProcessedUnits += GetContainedValue(container, resourceID, container._storedUnitsLookup);
             }
@@ -628,13 +561,10 @@ namespace TurboMode.Patches
             double num = totalUnitsToConsume / resourcePreProcessedUnits;
             foreach (ResourceContainer container in rcg._containers)
             {
-                //double resourcePreProcessedUnits2 = container.GetResourcePreProcessedUnits(resourceID);
-                //resourcePreProcessedUnits2 += container.GetResourceStoredUnits(resourceID);
                 double resourcePreProcessedUnits2 = GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
                 resourcePreProcessedUnits2 += GetContainedValue(container, resourceID, container._storedUnitsLookup);
 
                 double totalUnitsToConsume2 = num * resourcePreProcessedUnits2;
-                //container.ConsumePreProcessedResourceUnits(resourceID, totalUnitsToConsume2);
                 ConsumePreProcessedResourceUnits(container, resourceID, totalUnitsToConsume2);
             }
 
@@ -669,15 +599,11 @@ namespace TurboMode.Patches
             if (freeSpace <= totalUnitsToAdd)
             {
                 container._storedUnitsLookup[index] = capacity;
-                //using var fullMarker = containerChangedMarker.Auto();
-                //container.InternalPublishContainerChangedMessage(resourceID);
                 MarkContainerChanged(container, resourceID);
                 return freeSpace;
             }
             totalUnitsToAdd = Math.Abs(totalUnitsToAdd);
             container._storedUnitsLookup[index] += totalUnitsToAdd;
-            //using var marker = containerChangedMarker.Auto();
-            //container.InternalPublishContainerChangedMessage(resourceID);
             MarkContainerChanged(container, resourceID);
             return totalUnitsToAdd;
         }
@@ -693,15 +619,11 @@ namespace TurboMode.Patches
             if (stored <= totalUnitsToRemove)
             {
                 container._storedUnitsLookup[index] = 0.0;
-                //using var fullMarker = containerChangedMarker.Auto();
-                //container.InternalPublishContainerChangedMessage(resourceID);
                 MarkContainerChanged(container, resourceID);
                 return stored;
             }
             totalUnitsToRemove = Math.Abs(totalUnitsToRemove);
             container._storedUnitsLookup[index] -= totalUnitsToRemove;
-            //using var marker = containerChangedMarker.Auto();
-            //container.InternalPublishContainerChangedMessage(resourceID);
             MarkContainerChanged(container, resourceID);
             return totalUnitsToRemove;
         }
@@ -725,7 +647,6 @@ namespace TurboMode.Patches
 
             totalUnitsToConsume = Math.Abs(totalUnitsToConsume);
             container._preprocessedUnitsLookup[dataIndexFromID] += totalUnitsToConsume - stored;
-            //IGAssert.IsTrue(_preprocessedUnitsLookup[dataIndexFromID] <= _capacityUnitsLookup[dataIndexFromID], "Remove Preprocessed Resource total should always be <= capacity");
             return totalUnitsToConsume;
         }
 

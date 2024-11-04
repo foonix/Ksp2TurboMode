@@ -20,7 +20,7 @@ namespace TurboMode.Prepatch
                 "General",
                 "EnableFlowRequestOptimizations",
                 true,
-                "Rewirte vessel resource flow request processing."
+                "Improved code for vessel resource flow request processing and related processes."
             ).Value;
 
             if (!enabled)

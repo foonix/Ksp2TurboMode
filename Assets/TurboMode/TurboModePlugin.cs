@@ -31,6 +31,7 @@ namespace TurboMode
         public ConfigEntry<bool> burstMath;
         public ConfigEntry<bool> enableEcsSimConfig;
         public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
+        public ConfigEntry<bool> enableFlowRequestOptimizations;
         public ConfigEntry<bool> miscCleanups;
 
         private void Awake()
@@ -79,6 +80,12 @@ namespace TurboMode
                 false,
                 "Use Unity ECS for simulation (\"background\") updates.  DOES NOT WORK YET."
             );
+            enableFlowRequestOptimizations = Config.Bind(
+                "General",
+                "EnableFlowRequestOptimizations",
+                true,
+                "Improved code for vessel resource flow request processing and related processes."
+            );
 
             testModeEnabled = testModeConfig.Value;
             enableVesselSelfCollide = enableVesselSelfCollideConfig.Value;
@@ -97,7 +104,8 @@ namespace TurboMode
                 hooks.AddRange(SelectivePhysicsAutoSync.MakeHooks());
             if (shutoffUnusedWindowHierarchies.Value)
                 hooks.AddRange(ShutoffUnusedWindowHierarchies.MakeHooks());
-            hooks.AddRange(FlowRequests.MakeHooks());
+            if (enableFlowRequestOptimizations.Value)
+                hooks.AddRange(FlowRequests.MakeHooks());
             // BurstMath is handled in prepatcher.
             // MiscCleanups is handled in prepatcher.
             Application.quitting += BurstifyTransformFrames.DisposeCachedAllocations;

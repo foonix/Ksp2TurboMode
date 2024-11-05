@@ -3,7 +3,7 @@ using KSP.Sim.ResourceSystem;
 using MonoMod.RuntimeDetour;
 using System;
 using System.Collections.Generic;
-using System.Runtime.CompilerServices;
+using TurboMode.Models;
 using Unity.Profiling;
 using UnityEngine;
 using static KSP.Sim.ResourceSystem.ResourceFlowRequestManager;
@@ -29,11 +29,14 @@ namespace TurboMode.Patches
         // So slum it with field accessor for now.
         private static readonly ReflectionUtil.FieldHelper<ResourceFlowRequestManager, FlowRequests> resourceFlowDataField
             = new(typeof(ResourceFlowRequestManager).GetField("turboModeFlowRequestData"));
+        private static readonly ReflectionUtil.FieldHelper<ResourceContainerGroup, ResourceContainerGroupCache> resourceContainerGroupCacheField
+            = new(typeof(ResourceContainerGroup).GetField("resourceContainerGroupCache"));
 
         private static readonly ProfilerMarker updateFlowRequestsMarker = new("TM FlowRequests.UpdateFlowRequests()");
         private static readonly ProfilerMarker singleRequestMarker = new("TM FlowRequests.ProcessActiveRequests() (single)");
         private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests RequestsUpdated (event)");
         private static readonly ProfilerMarker containerChangedMarker = new("TM FlowRequests ContainerChanged (Message)");
+        private static readonly ProfilerMarker cacheSyncMarker = new("TM FlowRequests cache sync");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -63,8 +66,19 @@ namespace TurboMode.Patches
             data.UpdateFlowRequests(tickUniversalTime, tickDeltaTime);
         }
 
+        ResourceContainerGroupCache GetCache(ResourceContainerGroup rcg)
+        {
+            var cache = resourceContainerGroupCacheField.Get(rcg);
+            if (cache is null)
+            {
+                cache = new ResourceContainerGroupCache(rcg);
+                resourceContainerGroupCacheField.Set(rcg, cache);
+            }
+            return cache;
+        }
+
         #region container change message collation
-        struct ContainerResourceChangedNote : IEquatable<ContainerResourceChangedNote>
+        public struct ContainerResourceChangedNote : IEquatable<ContainerResourceChangedNote>
         {
             public ResourceDefinitionID resourceId;
             public ResourceContainer container;
@@ -78,9 +92,6 @@ namespace TurboMode.Patches
 
         void MarkContainerChanged(ResourceContainer container, ResourceDefinitionID resourceId)
         {
-            // Possibly could save the original value to avoid calling
-            // if net level change is zero.  E.G., a full battery loses a small amount of EC
-            // just to be immediately filled again in the same update.
             var note = new ContainerResourceChangedNote()
             {
                 container = container,
@@ -115,10 +126,12 @@ namespace TurboMode.Patches
                     rfrm._orderedRequests.Add(wrapper);
                 }
             }
+
             if (rfrm._orderedRequests.Count > 1)
             {
                 rfrm._orderedRequests.Sort(s_requestWrapperComparison);
             }
+
             foreach (ManagedRequestWrapper orderedRequest in rfrm._orderedRequests)
             {
                 foreach (FlowInstructionConfig instruction in orderedRequest.instructions)
@@ -128,7 +141,12 @@ namespace TurboMode.Patches
                     rfrm.CreateRequestContainerGroup(instruction);
                 }
             }
-            ProcessActiveRequests(rfrm, rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
+
+            // doing a single broad sync in/out is not quite working out.
+            // Something's mucking with container data somewhere and I haven't found what.
+            //SyncToGroupCaches();
+            ProcessActiveRequests(rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
+            //SyncFromGroupCaches();
 
             SendContainersChangedMessages();
 
@@ -139,9 +157,7 @@ namespace TurboMode.Patches
             }
         }
 
-        // changes: for -> foreach
-        private void ProcessActiveRequests(ResourceFlowRequestManager rfrm,
-            List<ManagedRequestWrapper> orderedRequests,
+        private void ProcessActiveRequests(List<ManagedRequestWrapper> orderedRequests,
             double tickUniversalTime, double tickDeltaTime)
         {
             foreach (ManagedRequestWrapper managedRequestWrapper in orderedRequests)
@@ -166,7 +182,8 @@ namespace TurboMode.Patches
                     double ratePerTick = (flowInstructionConfig.FlowUpdateMode == RequestFlowUpdateMode.FLOW_UNITS_PER_SECOND) ? tickDeltaTime : 1.0;
 
                     double minPerUpdate = flowInstructionConfig.FlowUnitsMinimum * ratePerTick;
-                    double maxPerUpdate = flowInstructionConfig.FlowUnitsOptimal * ratePerTick;
+                    double optimialPerUpdate = flowInstructionConfig.FlowUnitsOptimal * ratePerTick;
+
                     switch (flowInstructionConfig.FlowDirection)
                     {
                         case FlowDirection.FLOW_INBOUND:
@@ -174,7 +191,7 @@ namespace TurboMode.Patches
                                 float availableCapacity = (float)GetResourceCapacityUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource)
                                     - (float)GetResourceStoredUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, true);
 
-                                if (maxPerUpdate > (double)availableCapacity)
+                                if (optimialPerUpdate > (double)availableCapacity)
                                 {
                                     fullyFulfilled = false;
                                     if (minPerUpdate > (double)availableCapacity)
@@ -188,18 +205,18 @@ namespace TurboMode.Patches
 
                                 if (fullyFulfilled)
                                 {
-                                    StorePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, maxPerUpdate);
+                                    StorePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, optimialPerUpdate);
                                 }
                                 else if (partiallyFilled)
                                 {
                                     float b2 = 0f;
                                     if (availableCapacity > 0)
                                     {
-                                        b2 = availableCapacity / (float)maxPerUpdate;
+                                        b2 = availableCapacity / (float)optimialPerUpdate;
                                     }
 
                                     percentageToMove = Mathf.Min(percentageToMove, b2);
-                                    StorePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, (float)maxPerUpdate * percentageToMove);
+                                    StorePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, (float)optimialPerUpdate * percentageToMove);
                                 }
 
                                 break;
@@ -207,7 +224,7 @@ namespace TurboMode.Patches
                         case FlowDirection.FLOW_OUTBOUND:
                             {
                                 float storedUnits = (float)GetResourceStoredUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, true);
-                                if (maxPerUpdate > (double)storedUnits)
+                                if (optimialPerUpdate > (double)storedUnits)
                                 {
                                     fullyFulfilled = false;
                                     if (minPerUpdate > (double)storedUnits)
@@ -221,18 +238,18 @@ namespace TurboMode.Patches
 
                                 if (fullyFulfilled)
                                 {
-                                    ConsumePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, maxPerUpdate);
+                                    ConsumePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, optimialPerUpdate);
                                 }
                                 else if (partiallyFilled)
                                 {
                                     float b = 0f;
                                     if (storedUnits > 0f)
                                     {
-                                        b = storedUnits / (float)maxPerUpdate;
+                                        b = storedUnits / (float)optimialPerUpdate;
                                     }
 
                                     percentageToMove = Mathf.Min(percentageToMove, b);
-                                    ConsumePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, (float)maxPerUpdate * percentageToMove);
+                                    ConsumePreProcessedResourceUnits(flowInstructionConfig.ResourceContainerGroup, flowInstructionConfig.FlowResource, (float)optimialPerUpdate * percentageToMove);
                                 }
 
                                 break;
@@ -278,7 +295,33 @@ namespace TurboMode.Patches
                 }
                 else
                 {
-                    UpdateStateDeliveryRejected(managedRequestWrapper, tickUniversalTime, tickDeltaTime, rfrm._failedResources);
+                    managedRequestWrapper.UpdateStateDeliveryRejected(tickUniversalTime, tickDeltaTime, rfrm._failedResources);
+                }
+            }
+        }
+
+        private void SyncToGroupCaches()
+        {
+            using var marker = cacheSyncMarker.Auto();
+            foreach (var sequence in rfrm._RequestContainersGroups.Values)
+            {
+                foreach (var group in sequence._groupsInSequence)
+                {
+                    var cache = GetCache(group);
+                    cache.SyncFromGroup();
+                }
+            }
+        }
+
+        private void SyncFromGroupCaches()
+        {
+            using var marker = cacheSyncMarker.Auto();
+            foreach (var sequence in rfrm._RequestContainersGroups.Values)
+            {
+                foreach (var group in sequence._groupsInSequence)
+                {
+                    var cache = GetCache(group);
+                    cache.SyncToGroup(containersChanged);
                 }
             }
         }
@@ -293,62 +336,66 @@ namespace TurboMode.Patches
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
-                foreach (ResourceContainer container in group._containers)
-                {
-                    total += GetContainedValue(container, resourceID, container._capacityUnitsLookup);
-                }
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
+                total += cache.GetResourceCapacityUnits(resourceID);
             }
 
             return total;
         }
 
-        // changed:
-        // avoid interface enumerator allocation
-        // unpack loops in stack
         double GetResourceStoredUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, bool includePreProcessed)
         {
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
-                foreach (ResourceContainer container in group._containers)
-                {
-                    total += GetContainedValue(container, resourceID, container._storedUnitsLookup);
-                }
-
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
+                total += cache.GetResourceStoredUnits(resourceID);
                 if (includePreProcessed)
                 {
-                    foreach (ResourceContainer container in group._containers)
-                    {
-                        total -= GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
-                    }
+                    total -= cache.GetResourcePreProcessedUnits(resourceID);
                 }
             }
 
             return total;
         }
 
-        // changed:
-        // for -> foreach
-        double AddResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToAdd)
+        /// <summary>
+        /// Walk sequence in reverse order, allocating as much of totalUnitsToAdd as will fit to each group.
+        /// </summary>
+        double AddResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceId, double totalUnitsToAdd)
         {
             double remaining = totalUnitsToAdd;
-            foreach (var group in rcgs._groupsInSequence)
-            {
-                remaining -= AddResourceUnits(group, resourceID, remaining);
-            }
 
+            int index = rcgs._groupsInSequence.Count - 1;
+            while (index >= 0 && remaining > 0.0)
+            {
+                var cache = GetCache(rcgs._groupsInSequence[index]);
+                cache.SyncFromGroup();
+                remaining -= cache.AddResourceUnits(resourceId, remaining);
+                cache.SyncToGroup(containersChanged);
+                index--;
+            }
             return totalUnitsToAdd - remaining;
         }
 
         double StorePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToStore)
         {
-            double remaining = totalUnitsToStore;
-            foreach (var group in rcgs._groupsInSequence)
+            double num = totalUnitsToStore;
+            int num2 = rcgs._groupsInSequence.Count - 1;
+            while (num2 >= 0 && num > 0.0)
             {
-                remaining -= StorePreProcessedResourceUnits(group, resourceID, remaining);
+                ResourceContainerGroup group = rcgs._groupsInSequence[num2];
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
+                //num -= group.StorePreProcessedResourceUnits(resourceID, num);
+                num -= cache.StorePreProcessedResourceUnits(resourceID, num);
+                cache.SyncToGroup(containersChanged);
+                num2--;
             }
 
-            return totalUnitsToStore - remaining;
+            return totalUnitsToStore - num;
         }
 
         // changed:
@@ -358,16 +405,13 @@ namespace TurboMode.Patches
         {
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
-                foreach (ResourceContainer container in group._containers)
-                {
-                    container.ResetPreProcessedResources();
-                }
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
+                cache.ResetPreProcessedResources();
+                cache.SyncToGroup(containersChanged);
             }
         }
 
-        // changed:
-        // for -> foreach
-        // Avoid interface enumerator allocation that would create.
         double ConsumePreProcessedResourceUnits(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceID, double totalUnitsToConsume)
         {
             double remaining = totalUnitsToConsume;
@@ -378,7 +422,10 @@ namespace TurboMode.Patches
                     break;
                 }
 
-                remaining -= ConsumePreProcessedResourceUnits(group, resourceID, remaining);
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
+                remaining -= cache.ConsumePreProcessedResourceUnits(resourceID, remaining);
+                cache.SyncToGroup(containersChanged);
             }
 
             return totalUnitsToConsume - remaining;
@@ -396,273 +443,14 @@ namespace TurboMode.Patches
                 {
                     break;
                 }
-
-                remaining -= RemoveResourceUnits(group, resourceID, remaining);
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
+                //remaining -= RemoveResourceUnits(group, resourceID, remaining);
+                remaining -= GetCache(group).RemoveResourceUnits(resourceID, remaining);
+                cache.SyncToGroup(containersChanged);
             }
 
             return totalUnitsToRemove - remaining;
-        }
-        #endregion
-
-        #region ResourceContainerGroup "methods"
-        // changed:
-        // for -> foreach
-        // Avoid interface enumerator allocation that would create.
-        double RemoveResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToRemove)
-        {
-            if (totalUnitsToRemove == 0.0)
-            {
-                return 0.0;
-            }
-
-            double resourceStoredUnits = GetResourceStoredUnits(rcg, resourceID);
-            if (resourceStoredUnits <= totalUnitsToRemove)
-            {
-                rcg.DumpResource(resourceID);
-                return resourceStoredUnits;
-            }
-
-            double num = totalUnitsToRemove / resourceStoredUnits;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                double resourceStoredUnits2 = GetContainedValue(container, resourceID, container._storedUnitsLookup);
-                double totalUnitsToRemove2 = num * resourceStoredUnits2;
-                RemoveResourceUnits(container, resourceID, totalUnitsToRemove2);
-            }
-
-            return totalUnitsToRemove;
-        }
-
-
-        // changed:
-        // for -> foreach
-        // Avoid interface enumerator allocation that would create.
-        double GetResourceStoredUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
-        {
-            double stored = 0.0;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                stored += GetContainedValue(container, resourceID, container._storedUnitsLookup);
-            }
-
-            return stored;
-        }
-
-        double AddResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceId, double totalUnitsToAdd)
-        {
-            if (totalUnitsToAdd == 0.0)
-            {
-                return 0.0;
-            }
-
-            double resourceEmptyUnits = 0;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                resourceEmptyUnits += container.GetResourceEmptyUnits(resourceId, false);
-            }
-
-            if (resourceEmptyUnits <= totalUnitsToAdd)
-            {
-                FillResourceToCapacity(rcg, resourceId);
-                return resourceEmptyUnits;
-            }
-
-            double num = totalUnitsToAdd / resourceEmptyUnits;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                double resourceEmptyUnits2 = container.GetResourceEmptyUnits(resourceId, false);
-                double totalUnitsToAdd2 = num * resourceEmptyUnits2;
-                AddResourceUnits(container, resourceId, totalUnitsToAdd2);
-            }
-
-            return totalUnitsToAdd;
-        }
-
-        double FillResourceToCapacity(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
-        {
-            double added = 0.0;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                added += container.FillResourceToCapacity(resourceID);
-            }
-
-            return added;
-        }
-
-        double FillPreProcessedResourceToCapacity(ResourceContainerGroup rcg, ResourceDefinitionID resourceID)
-        {
-            double filled = 0.0;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                filled += container.FillPreProcessedResourceToCapacity(resourceID);
-            }
-
-            return filled;
-        }
-
-        // changed:
-        // merge group capacity/stored/preprocess getters into single pass.
-        double StorePreProcessedResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToStore)
-        {
-            if (totalUnitsToStore == 0.0)
-            {
-                return 0.0;
-            }
-
-            double num = 0;
-            foreach (var container in rcg._containers)
-            {
-                num += GetContainedValue(container, resourceID, container._capacityUnitsLookup)
-                    - GetContainedValue(container, resourceID, container._storedUnitsLookup)
-                    + GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
-            }
-
-            if (num <= totalUnitsToStore)
-            {
-                //return rcg.FillPreProcessedResourceToCapacity(resourceID);
-                return FillPreProcessedResourceToCapacity(rcg, resourceID);
-            }
-
-            double num2 = totalUnitsToStore / num;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                double resourceEmptyUnits = container.GetResourceEmptyUnits(resourceID, includePreProcessed: true);
-                double totalUnitsToStore2 = num2 * resourceEmptyUnits;
-                container.StorePreProcessedResourceUnits(resourceID, totalUnitsToStore2);
-            }
-
-            return totalUnitsToStore;
-        }
-
-        // changed:
-        // for -> foreach
-        // Avoid interface enumerator allocation that would create.
-        // fetch container preprocess/stored units for the same container in a single pass over the group.
-        double ConsumePreProcessedResourceUnits(ResourceContainerGroup rcg, ResourceDefinitionID resourceID, double totalUnitsToConsume)
-        {
-            if (totalUnitsToConsume == 0.0)
-            {
-                return 0.0;
-            }
-
-            // what to call this variable?
-            double resourcePreProcessedUnits = 0;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                resourcePreProcessedUnits += GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
-                resourcePreProcessedUnits += GetContainedValue(container, resourceID, container._storedUnitsLookup);
-            }
-
-            if (resourcePreProcessedUnits <= totalUnitsToConsume)
-            {
-                return rcg.DumpPreProcessedResource(resourceID);
-            }
-
-            double num = totalUnitsToConsume / resourcePreProcessedUnits;
-            foreach (ResourceContainer container in rcg._containers)
-            {
-                double resourcePreProcessedUnits2 = GetContainedValue(container, resourceID, container._preprocessedUnitsLookup);
-                resourcePreProcessedUnits2 += GetContainedValue(container, resourceID, container._storedUnitsLookup);
-
-                double totalUnitsToConsume2 = num * resourcePreProcessedUnits2;
-                ConsumePreProcessedResourceUnits(container, resourceID, totalUnitsToConsume2);
-            }
-
-            return totalUnitsToConsume;
-        }
-        #endregion
-
-        #region ManagedRequestWrapper "methods"
-        // changed:
-        // pass failedResources directly to avoid list copy.
-        void UpdateStateDeliveryRejected(ManagedRequestWrapper wrapper, double tickUniversalTime, double tickDeltaTime, List<ResourceDefinitionID> failedResources)
-        {
-            wrapper.RequestResolutionState.LastTickUniversalTime = tickUniversalTime;
-            wrapper.RequestResolutionState.LastTickDeltaTime = tickDeltaTime;
-            wrapper.RequestResolutionState.WasLastTickDeliveryAccepted = false;
-            wrapper.RequestResolutionState.LastTickDeliveryNormalized = 0.0;
-            wrapper.RequestResolutionState.ResourcesNotProcessed = failedResources;
-        }
-        #endregion
-
-        #region ResourceContainer "methods"
-        double AddResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToAdd)
-        {
-            int index = container.GetDataIndexFromID(resourceID);
-            if (index == -1)
-            {
-                return 0.0;
-            }
-            double capacity = container._capacityUnitsLookup[index];
-            double stored = container._storedUnitsLookup[index];
-            double freeSpace = capacity - stored;
-            if (freeSpace <= totalUnitsToAdd)
-            {
-                container._storedUnitsLookup[index] = capacity;
-                MarkContainerChanged(container, resourceID);
-                return freeSpace;
-            }
-            totalUnitsToAdd = Math.Abs(totalUnitsToAdd);
-            container._storedUnitsLookup[index] += totalUnitsToAdd;
-            MarkContainerChanged(container, resourceID);
-            return totalUnitsToAdd;
-        }
-
-        double RemoveResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToRemove)
-        {
-            int index = container.GetDataIndexFromID(resourceID);
-            if (index == -1)
-            {
-                return 0.0;
-            }
-            double stored = container._storedUnitsLookup[index];
-            if (stored <= totalUnitsToRemove)
-            {
-                container._storedUnitsLookup[index] = 0.0;
-                MarkContainerChanged(container, resourceID);
-                return stored;
-            }
-            totalUnitsToRemove = Math.Abs(totalUnitsToRemove);
-            container._storedUnitsLookup[index] -= totalUnitsToRemove;
-            MarkContainerChanged(container, resourceID);
-            return totalUnitsToRemove;
-        }
-
-        public double ConsumePreProcessedResourceUnits(ResourceContainer container, ResourceDefinitionID resourceID, double totalUnitsToConsume)
-        {
-            int dataIndexFromID = container.GetDataIndexFromID(resourceID);
-            if (dataIndexFromID == -1)
-            {
-                return 0.0;
-            }
-
-            double stored = container._storedUnitsLookup[dataIndexFromID];
-            double preprocessed = container._preprocessedUnitsLookup[dataIndexFromID];
-            var available = stored - preprocessed;
-            if (available <= totalUnitsToConsume)
-            {
-                container._preprocessedUnitsLookup[dataIndexFromID] += available - stored;
-                return stored;
-            }
-
-            totalUnitsToConsume = Math.Abs(totalUnitsToConsume);
-            container._preprocessedUnitsLookup[dataIndexFromID] += totalUnitsToConsume - stored;
-            return totalUnitsToConsume;
-        }
-
-        [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        double GetContainedValue(ResourceContainer container, ResourceDefinitionID resourceID, List<double> storage)
-        {
-            int index = container.GetDataIndexFromID(resourceID);
-
-            // This bounds check may not even be necessary.  If the container doesn't have the resource, it might not be in the group.
-            // But leaving it here because I can't measure a time difference.
-            if (index == -1)
-            {
-                return 0;
-            }
-
-            return storage[index];
         }
         #endregion
     }

@@ -40,9 +40,14 @@ namespace TurboMode.Prepatch
             var flowRequestData = assembly.MainModule.ImportReference(tmAssembly
                 .MainModule.GetType("TurboMode.Patches.FlowRequests")
             );
-
             var rfrmType = assembly.MainModule.GetType("KSP.Sim.ResourceSystem.ResourceFlowRequestManager");
             rfrmType.Fields.Add(new FieldDefinition("turboModeFlowRequestData", FieldAttributes.Public, flowRequestData));
+
+            var groupCacheData = assembly.MainModule.ImportReference(tmAssembly
+                .MainModule.GetType("TurboMode.Models.ResourceContainerGroupCache")
+            );
+            var rcgType = assembly.MainModule.GetType("KSP.Sim.ResourceSystem.ResourceContainerGroup");
+            rcgType.Fields.Add(new FieldDefinition("resourceContainerGroupCache", FieldAttributes.Public, groupCacheData));
         }
     }
 }

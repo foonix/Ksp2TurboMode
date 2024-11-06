@@ -1,4 +1,5 @@
 using KSP.Sim.ResourceSystem;
+using Unity.Burst;
 using Unity.Mathematics;
 
 namespace TurboMode.Models
@@ -6,6 +7,7 @@ namespace TurboMode.Models
     /// <summary>
     /// Replacement for ResourceContainer, except that it can only store one resource type and can be used in Burst code.
     /// </summary>
+    [BurstCompile]
     public struct ResourceAmounts
     {
         public ResourceDefinitionID resourceId;
@@ -29,30 +31,33 @@ namespace TurboMode.Models
             preProcessed = 0;
         }
 
+        [BurstCompile]
         public readonly double GetResourceEmptyUnits(bool includePreprocessed = false)
             => includePreprocessed ? capacity - stored + preProcessed : capacity - stored;
+
+        [BurstCompile]
         public double DumpPreProcessedResource()
         {
-            double num = 0.0;
+            double dumped = 0.0;
+
             if (preProcessed < 0.0)
             {
-                num = math.abs(preProcessed);
+                dumped = math.abs(preProcessed);
                 preProcessed = 0.0;
             }
 
-            return num + stored;
+            return dumped + stored;
         }
 
+        [BurstCompile]
         public double AddResourceUnits(double totalUnitsToAdd)
         {
-            double num = capacity;
-            double num2 = stored;
-            double num3 = num - num2;
+            double emptySpace = capacity - stored;
 
-            if (num3 <= totalUnitsToAdd)
+            if (emptySpace <= totalUnitsToAdd)
             {
-                stored = num;
-                return num3;
+                stored = capacity;
+                return emptySpace;
             }
 
             totalUnitsToAdd = math.abs(totalUnitsToAdd);
@@ -60,6 +65,7 @@ namespace TurboMode.Models
             return totalUnitsToAdd;
         }
 
+        [BurstCompile]
         public double FillResourceToCapacity()
         {
             double filled = capacity - stored;
@@ -67,45 +73,43 @@ namespace TurboMode.Models
             return filled;
         }
 
+        [BurstCompile]
         public double ConsumePreProcessedResourceUnits(double totalUnitsToConsume)
         {
-            double num = stored;
-            double num2 = preProcessed;
-            num -= num2;
-            if (num <= totalUnitsToConsume)
+            double preProcessApplied = stored - preProcessed;
+            if (preProcessApplied <= totalUnitsToConsume)
             {
-                preProcessed += num;
-                preProcessed -= stored;
-                return num;
+                preProcessed += preProcessApplied - stored;
+                return preProcessApplied;
             }
 
             totalUnitsToConsume = math.abs(totalUnitsToConsume);
-            preProcessed += totalUnitsToConsume;
-            preProcessed -= stored;
+            preProcessed += totalUnitsToConsume - stored;
             //IGAssert.IsTrue(_preprocessedUnitsLookup[dataIndexFromID] <= _capacityUnitsLookup[dataIndexFromID], "Remove Preprocessed Resource total should always be <= capacity");
             return totalUnitsToConsume;
         }
+
+        [BurstCompile]
         public double FillPreProcessedResourceToCapacity()
         {
-            double num = capacity - stored;
-            num = ((!(preProcessed < 0.0))
-                ? (num + preProcessed)
-                : (num - math.abs(preProcessed)));
-            preProcessed = 0.0 - (capacity - stored);
+            double available = capacity - stored;
+            available = preProcessed >= 0.0
+                ? available + preProcessed
+                : available - math.abs(preProcessed);
+            preProcessed = stored - capacity;
             //IGAssert.IsTrue(math.abs(_preprocessedUnitsLookup[dataIndexFromID]) <= _capacityUnitsLookup[dataIndexFromID] - _storedUnitsLookup[dataIndexFromID], "Filling Preprocessed amount cannot be more than capacity.");
-            return num;
+            return available;
         }
+
+        [BurstCompile]
         public double StorePreProcessedResourceUnits(double totalUnitsToStore)
         {
-            double num = capacity;
-            double num2 = stored;
-            double num3 = preProcessed;
-            double num4 = num - num2;
-            num4 = ((!(num3 < 0.0)) ? (num4 + num3) : (num4 - num3));
-            if (num4 <= totalUnitsToStore)
+            double available = capacity - stored;
+            available = math.abs(available);
+            if (available <= totalUnitsToStore)
             {
-                preProcessed = 0.0 - num4;
-                return num4;
+                preProcessed = -available;
+                return available;
             }
 
             totalUnitsToStore = math.abs(totalUnitsToStore);
@@ -113,14 +117,16 @@ namespace TurboMode.Models
             //IGAssert.IsTrue(math.abs(_preprocessedUnitsLookup[dataIndexFromID]) <= num, "Adding Preprocessed Resource units cannot be over capacity.");
             return totalUnitsToStore;
         }
+
+        [BurstCompile]
         public double RemoveResourceUnits(double totalUnitsToRemove)
         {
-            double num = stored;
-            if (num <= totalUnitsToRemove)
+            double wasStored = stored;
+            if (wasStored <= totalUnitsToRemove)
             {
                 stored = 0.0;
                 //InternalPublishContainerChangedMessage(resourceID);
-                return num;
+                return wasStored;
             }
 
             totalUnitsToRemove = math.abs(totalUnitsToRemove);
@@ -129,6 +135,7 @@ namespace TurboMode.Models
             return totalUnitsToRemove;
         }
 
+        [BurstCompile]
         public void ResetPreProcessedResources()
         {
             preProcessed = 0;

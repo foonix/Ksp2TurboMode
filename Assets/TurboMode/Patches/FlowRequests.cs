@@ -52,6 +52,14 @@ namespace TurboMode.Patches
                 typeof(ResourceContainerGroupSequence).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
                 (Func<Func<ResourceContainerGroupSequence,ResourceDefinitionID, double>, ResourceContainerGroupSequence,ResourceDefinitionID, double>)GetResourceStoredUnits
                 ),
+            new Hook(
+                typeof(ResourceContainerGroup).GetMethod("GetResourceCapacityUnits", new Type[] {typeof(ResourceDefinitionID)}),
+                (Func<Func<ResourceContainerGroup, ResourceDefinitionID, double>, ResourceContainerGroup,ResourceDefinitionID, double>)GetResourceCapacityUnits
+                ),
+            new Hook(
+                typeof(ResourceContainerGroup).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
+                (Func<Func<ResourceContainerGroup,ResourceDefinitionID, double>, ResourceContainerGroup,ResourceDefinitionID, double>)GetResourceStoredUnits
+                ),
         };
 
         private FlowRequests(ResourceFlowRequestManager rfrm)
@@ -465,6 +473,25 @@ namespace TurboMode.Patches
             }
 
             return total;
+        }
+
+        static double GetResourceCapacityUnits(
+            Func<ResourceContainerGroup, ResourceDefinitionID, double> orig,
+            ResourceContainerGroup rcg,
+            ResourceDefinitionID resourceId)
+        {
+            var cache = GetCacheForUI(rcg);
+            return cache.GetResourceCapacityUnits(resourceId);
+        }
+
+        static double GetResourceStoredUnits(
+            Func<ResourceContainerGroup, ResourceDefinitionID, double> orig,
+            ResourceContainerGroup rcg,
+            ResourceDefinitionID resourceId
+            )
+        {
+            var cache = GetCacheForUI(rcg);
+            return cache.GetResourceStoredUnits(resourceId);
         }
         #endregion
     }

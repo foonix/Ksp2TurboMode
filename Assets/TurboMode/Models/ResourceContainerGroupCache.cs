@@ -204,7 +204,7 @@ namespace TurboMode.Models
             {
                 return agg.capacity;
             }
-            throw new ArgumentException($"TM: Capacity not found for {resourceId}");
+            return 0;
         }
 
         [BurstCompile]
@@ -214,7 +214,7 @@ namespace TurboMode.Models
             {
                 return agg.stored;
             }
-            throw new ArgumentException($"TM: Stored not found for {resourceId}");
+            return 0;
         }
 
         [BurstCompile]
@@ -231,8 +231,7 @@ namespace TurboMode.Models
                     return agg.capacity - agg.stored;
                 }
             }
-
-            throw new ArgumentException($"TM: empty units not found for {resourceId}");
+            return 0;
         }
 
         [BurstCompile]
@@ -242,7 +241,7 @@ namespace TurboMode.Models
             {
                 return agg.preProcessed;
             }
-            throw new ArgumentException($"TM: preProcessed not found for {resourceId}");
+            return 0;
         }
 
         [BurstCompile]
@@ -354,10 +353,6 @@ namespace TurboMode.Models
             if (data.aggregateData.TryGetValue(resourceId, out var agg))
             {
                 resourcePreProcessedUnits = agg.preProcessed + agg.stored;
-            }
-            else
-            {
-                throw new ArgumentException($"TM: preProcessed not found for {resourceId}");
             }
 
             if (resourcePreProcessedUnits <= totalUnitsToConsume)

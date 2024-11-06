@@ -21,6 +21,7 @@ namespace TurboMode.Patches
     {
         private readonly ResourceFlowRequestManager rfrm;
         private readonly HashSet<ContainerResourceChangedNote> containersChanged = new();
+        private readonly HashSet<ResourceContainerGroupCache> distinctGroupsCached = new();
 
         private static readonly ReflectionUtil.EventHelper<ResourceFlowRequestManager, Action> requestsUpdatedHelper
             = new(nameof(ResourceFlowRequestManager.RequestsUpdated));
@@ -42,6 +43,14 @@ namespace TurboMode.Patches
             new Hook(
                 typeof(ResourceFlowRequestManager).GetMethod("UpdateFlowRequests"),
                 (Action<Action<ResourceFlowRequestManager, double, double>, ResourceFlowRequestManager, double, double>)UpdateFlowRequests
+                ),
+            new Hook(
+                typeof(ResourceContainerGroupSequence).GetMethod("GetResourceCapacityUnits"),
+                (Func<Func<ResourceContainerGroupSequence, ResourceDefinitionID, double>, ResourceContainerGroupSequence,ResourceDefinitionID, double>)GetResourceCapacityUnits
+                ),
+            new Hook(
+                typeof(ResourceContainerGroupSequence).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
+                (Func<Func<ResourceContainerGroupSequence,ResourceDefinitionID, double>, ResourceContainerGroupSequence,ResourceDefinitionID, double>)GetResourceStoredUnits
                 ),
         };
 
@@ -73,7 +82,20 @@ namespace TurboMode.Patches
                 cache = new ResourceContainerGroupCache(rcg);
                 resourceContainerGroupCacheField.Set(rcg, cache);
             }
+            if (distinctGroupsCached.Add(cache))
+            {
+                cache.SyncFromGroup();
+            }
             return cache;
+        }
+
+        void FlushCaches()
+        {
+            foreach (var cache in distinctGroupsCached)
+            {
+                cache.SyncToGroup(containersChanged);
+            }
+            distinctGroupsCached.Clear();
         }
 
         #region container change message collation
@@ -131,11 +153,7 @@ namespace TurboMode.Patches
                 }
             }
 
-            // doing a single broad sync in/out is not quite working out.
-            // Something's mucking with container data somewhere and I haven't found what.
-            //SyncToGroupCaches();
             ProcessActiveRequests(rfrm._orderedRequests, tickUniversalTime, tickDeltaTime);
-            //SyncFromGroupCaches();
 
             SendContainersChangedMessages();
 
@@ -172,8 +190,6 @@ namespace TurboMode.Patches
 
                     double minPerUpdate = flowInstructionConfig.FlowUnitsMinimum * ratePerTick;
                     double optimialPerUpdate = flowInstructionConfig.FlowUnitsOptimal * ratePerTick;
-
-                    SyncToGroupCaches(flowInstructionConfig.ResourceContainerGroup);
 
                     switch (flowInstructionConfig.FlowDirection)
                     {
@@ -246,16 +262,14 @@ namespace TurboMode.Patches
                                 break;
                             }
                     }
-
-                    SyncFromGroupCaches(flowInstructionConfig.ResourceContainerGroup);
                 }
+
+                FlushCaches();
 
                 if (fullyFulfilled || partiallyFilled)
                 {
                     foreach (FlowInstructionConfig instruction in managedRequestWrapper.instructions)
                     {
-                        SyncToGroupCaches(instruction.ResourceContainerGroup);
-
                         double num6 = instruction.FlowUnitsOptimal * ((instruction.FlowUpdateMode == RequestFlowUpdateMode.FLOW_UNITS_PER_SECOND) ? tickDeltaTime : 1.0) * (double)percentageToMove;
                         if (instruction.FlowUnitsTarget > 0.0)
                         {
@@ -278,7 +292,7 @@ namespace TurboMode.Patches
 
                         ResetPreProcessedResources(instruction.ResourceContainerGroup);
 
-                        SyncFromGroupCaches(instruction.ResourceContainerGroup);
+                        FlushCaches();
                     }
 
                     percentageToMove = Mathf.Clamp01(percentageToMove);
@@ -294,24 +308,6 @@ namespace TurboMode.Patches
                 {
                     managedRequestWrapper.UpdateStateDeliveryRejected(tickUniversalTime, tickDeltaTime, rfrm._failedResources);
                 }
-            }
-        }
-
-        private void SyncToGroupCaches(ResourceContainerGroupSequence sequence)
-        {
-            foreach (var group in sequence._groupsInSequence)
-            {
-                var cache = GetCache(group);
-                cache.SyncFromGroup();
-            }
-        }
-
-        private void SyncFromGroupCaches(ResourceContainerGroupSequence sequence)
-        {
-            foreach (var group in sequence._groupsInSequence)
-            {
-                var cache = GetCache(group);
-                cache.SyncToGroup(containersChanged);
             }
         }
         #endregion
@@ -426,6 +422,49 @@ namespace TurboMode.Patches
             }
 
             return totalUnitsToRemove - remaining;
+        }
+        #endregion
+
+        #region hooks to speed up other game interactions with RCGS.
+        static ResourceContainerGroupCache GetCacheForUI(ResourceContainerGroup group)
+        {
+            var cache = resourceContainerGroupCacheField.Get(group);
+            if (cache is null)
+            {
+                cache = new ResourceContainerGroupCache(group);
+                resourceContainerGroupCacheField.Set(group, cache);
+                cache.SyncFromGroup();
+            }
+            return cache;
+        }
+
+        static double GetResourceCapacityUnits(Func<ResourceContainerGroupSequence, ResourceDefinitionID, double> orig,
+            ResourceContainerGroupSequence rcgs,
+            ResourceDefinitionID resourceId)
+        {
+            double total = 0.0;
+            foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
+            {
+                var cache = GetCacheForUI(group);
+                total += cache.GetResourceCapacityUnits(resourceId);
+            }
+
+            return total;
+        }
+
+        static double GetResourceStoredUnits(Func<ResourceContainerGroupSequence, ResourceDefinitionID, double> orig,
+            ResourceContainerGroupSequence rcgs,
+            ResourceDefinitionID resourceId
+            )
+        {
+            double total = 0.0;
+            foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
+            {
+                var cache = GetCacheForUI(group);
+                total += cache.GetResourceStoredUnits(resourceId);
+            }
+
+            return total;
         }
         #endregion
     }

@@ -36,7 +36,6 @@ namespace TurboMode.Patches
         private static readonly ProfilerMarker singleRequestMarker = new("TM FlowRequests.ProcessActiveRequests() (single)");
         private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests RequestsUpdated (event)");
         private static readonly ProfilerMarker containerChangedMarker = new("TM FlowRequests ContainerChanged (Message)");
-        private static readonly ProfilerMarker cacheSyncMarker = new("TM FlowRequests cache sync");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -88,16 +87,6 @@ namespace TurboMode.Patches
 
             public override readonly int GetHashCode()
                 => HashCode.Combine(resourceId, container);
-        }
-
-        void MarkContainerChanged(ResourceContainer container, ResourceDefinitionID resourceId)
-        {
-            var note = new ContainerResourceChangedNote()
-            {
-                container = container,
-                resourceId = resourceId,
-            };
-            containersChanged.Add(note);
         }
 
         void SendContainersChangedMessages()
@@ -184,6 +173,8 @@ namespace TurboMode.Patches
                     double minPerUpdate = flowInstructionConfig.FlowUnitsMinimum * ratePerTick;
                     double optimialPerUpdate = flowInstructionConfig.FlowUnitsOptimal * ratePerTick;
 
+                    SyncToGroupCaches(flowInstructionConfig.ResourceContainerGroup);
+
                     switch (flowInstructionConfig.FlowDirection)
                     {
                         case FlowDirection.FLOW_INBOUND:
@@ -255,12 +246,16 @@ namespace TurboMode.Patches
                                 break;
                             }
                     }
+
+                    SyncFromGroupCaches(flowInstructionConfig.ResourceContainerGroup);
                 }
 
                 if (fullyFulfilled || partiallyFilled)
                 {
                     foreach (FlowInstructionConfig instruction in managedRequestWrapper.instructions)
                     {
+                        SyncToGroupCaches(instruction.ResourceContainerGroup);
+
                         double num6 = instruction.FlowUnitsOptimal * ((instruction.FlowUpdateMode == RequestFlowUpdateMode.FLOW_UNITS_PER_SECOND) ? tickDeltaTime : 1.0) * (double)percentageToMove;
                         if (instruction.FlowUnitsTarget > 0.0)
                         {
@@ -282,6 +277,8 @@ namespace TurboMode.Patches
                         }
 
                         ResetPreProcessedResources(instruction.ResourceContainerGroup);
+
+                        SyncFromGroupCaches(instruction.ResourceContainerGroup);
                     }
 
                     percentageToMove = Mathf.Clamp01(percentageToMove);
@@ -300,29 +297,21 @@ namespace TurboMode.Patches
             }
         }
 
-        private void SyncToGroupCaches()
+        private void SyncToGroupCaches(ResourceContainerGroupSequence sequence)
         {
-            using var marker = cacheSyncMarker.Auto();
-            foreach (var sequence in rfrm._RequestContainersGroups.Values)
+            foreach (var group in sequence._groupsInSequence)
             {
-                foreach (var group in sequence._groupsInSequence)
-                {
-                    var cache = GetCache(group);
-                    cache.SyncFromGroup();
-                }
+                var cache = GetCache(group);
+                cache.SyncFromGroup();
             }
         }
 
-        private void SyncFromGroupCaches()
+        private void SyncFromGroupCaches(ResourceContainerGroupSequence sequence)
         {
-            using var marker = cacheSyncMarker.Auto();
-            foreach (var sequence in rfrm._RequestContainersGroups.Values)
+            foreach (var group in sequence._groupsInSequence)
             {
-                foreach (var group in sequence._groupsInSequence)
-                {
-                    var cache = GetCache(group);
-                    cache.SyncToGroup(containersChanged);
-                }
+                var cache = GetCache(group);
+                cache.SyncToGroup(containersChanged);
             }
         }
         #endregion
@@ -337,7 +326,6 @@ namespace TurboMode.Patches
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
                 var cache = GetCache(group);
-                cache.SyncFromGroup();
                 total += cache.GetResourceCapacityUnits(resourceID);
             }
 
@@ -350,7 +338,6 @@ namespace TurboMode.Patches
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
                 var cache = GetCache(group);
-                cache.SyncFromGroup();
                 total += cache.GetResourceStoredUnits(resourceID);
                 if (includePreProcessed)
                 {
@@ -372,9 +359,7 @@ namespace TurboMode.Patches
             while (index >= 0 && remaining > 0.0)
             {
                 var cache = GetCache(rcgs._groupsInSequence[index]);
-                cache.SyncFromGroup();
                 remaining -= cache.AddResourceUnits(resourceId, remaining);
-                cache.SyncToGroup(containersChanged);
                 index--;
             }
             return totalUnitsToAdd - remaining;
@@ -388,10 +373,7 @@ namespace TurboMode.Patches
             {
                 ResourceContainerGroup group = rcgs._groupsInSequence[num2];
                 var cache = GetCache(group);
-                cache.SyncFromGroup();
-                //num -= group.StorePreProcessedResourceUnits(resourceID, num);
                 num -= cache.StorePreProcessedResourceUnits(resourceID, num);
-                cache.SyncToGroup(containersChanged);
                 num2--;
             }
 
@@ -406,9 +388,7 @@ namespace TurboMode.Patches
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
                 var cache = GetCache(group);
-                cache.SyncFromGroup();
                 cache.ResetPreProcessedResources();
-                cache.SyncToGroup(containersChanged);
             }
         }
 
@@ -423,9 +403,7 @@ namespace TurboMode.Patches
                 }
 
                 var cache = GetCache(group);
-                cache.SyncFromGroup();
                 remaining -= cache.ConsumePreProcessedResourceUnits(resourceID, remaining);
-                cache.SyncToGroup(containersChanged);
             }
 
             return totalUnitsToConsume - remaining;
@@ -444,10 +422,7 @@ namespace TurboMode.Patches
                     break;
                 }
                 var cache = GetCache(group);
-                cache.SyncFromGroup();
-                //remaining -= RemoveResourceUnits(group, resourceID, remaining);
-                remaining -= GetCache(group).RemoveResourceUnits(resourceID, remaining);
-                cache.SyncToGroup(containersChanged);
+                remaining -= cache.RemoveResourceUnits(resourceID, remaining);
             }
 
             return totalUnitsToRemove - remaining;

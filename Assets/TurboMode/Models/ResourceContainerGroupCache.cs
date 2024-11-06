@@ -1,12 +1,9 @@
 using KSP.Sim.ResourceSystem;
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.ComponentModel;
 using TurboMode.Patches;
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Mathematics;
 using UnityEngine;
 
 namespace TurboMode.Models
@@ -305,9 +302,7 @@ namespace TurboMode.Models
                 return 0.0;
             }
 
-            double available = GetResourceCapacityUnits(data, resourceId)
-                - GetResourceStoredUnits(data, resourceId)
-                + GetResourcePreProcessedUnits(data, resourceId);
+            double available = GetResourceEmptyUnits(data, resourceId, true);
 
             if (available <= totalUnitsToStore)
             {
@@ -355,8 +350,16 @@ namespace TurboMode.Models
                 return 0.0;
             }
 
-            double resourcePreProcessedUnits = GetResourcePreProcessedUnits(data, resourceId);
-            resourcePreProcessedUnits += GetResourceStoredUnits(data, resourceId);
+            double resourcePreProcessedUnits = 0;
+            if (data.aggregateData.TryGetValue(resourceId, out var agg))
+            {
+                resourcePreProcessedUnits = agg.preProcessed + agg.stored;
+            }
+            else
+            {
+                throw new ArgumentException($"TM: preProcessed not found for {resourceId}");
+            }
+
             if (resourcePreProcessedUnits <= totalUnitsToConsume)
             {
                 return DumpPreProcessedResource(data, resourceId);
@@ -424,7 +427,6 @@ namespace TurboMode.Models
                     double resourceStoredUnits2 = amounts.stored;
                     double totalUnitsToRemove2 = ratioPerContainer * resourceStoredUnits2;
                     amounts.RemoveResourceUnits(totalUnitsToRemove2);
-
                 }
             }
             // todo: avoid full agg rescan

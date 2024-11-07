@@ -37,6 +37,8 @@ namespace TurboMode.Patches
         private static readonly ProfilerMarker singleRequestMarker = new("TM FlowRequests.ProcessActiveRequests() (single)");
         private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests RequestsUpdated (event)");
         private static readonly ProfilerMarker containerChangedMarker = new("TM FlowRequests ContainerChanged (Message)");
+        private static readonly ProfilerMarker externalStoredMarker = new("TM FlowRequests external stored amount request");
+        private static readonly ProfilerMarker externalCapacityMarker = new("TM FlowRequests external capacity amount request");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -46,19 +48,19 @@ namespace TurboMode.Patches
                 ),
             new Hook(
                 typeof(ResourceContainerGroupSequence).GetMethod("GetResourceCapacityUnits"),
-                (Func<Func<ResourceContainerGroupSequence, ResourceDefinitionID, double>, ResourceContainerGroupSequence,ResourceDefinitionID, double>)GetResourceCapacityUnits
+                (Func<Func<ResourceContainerGroupSequence, ResourceDefinitionID, double>, ResourceContainerGroupSequence, ResourceDefinitionID, double>)GetResourceCapacityUnits
                 ),
             new Hook(
                 typeof(ResourceContainerGroupSequence).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
-                (Func<Func<ResourceContainerGroupSequence,ResourceDefinitionID, double>, ResourceContainerGroupSequence,ResourceDefinitionID, double>)GetResourceStoredUnits
+                (Func<Func<ResourceContainerGroupSequence, ResourceDefinitionID, double>, ResourceContainerGroupSequence, ResourceDefinitionID, double>)GetResourceStoredUnits
                 ),
             new Hook(
                 typeof(ResourceContainerGroup).GetMethod("GetResourceCapacityUnits", new Type[] {typeof(ResourceDefinitionID)}),
-                (Func<Func<ResourceContainerGroup, ResourceDefinitionID, double>, ResourceContainerGroup,ResourceDefinitionID, double>)GetResourceCapacityUnits
+                (Func<Func<ResourceContainerGroup, ResourceDefinitionID, double>, ResourceContainerGroup, ResourceDefinitionID, double>)GetResourceCapacityUnits
                 ),
             new Hook(
                 typeof(ResourceContainerGroup).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
-                (Func<Func<ResourceContainerGroup,ResourceDefinitionID, double>, ResourceContainerGroup,ResourceDefinitionID, double>)GetResourceStoredUnits
+                (Func<Func<ResourceContainerGroup, ResourceDefinitionID, double>, ResourceContainerGroup, ResourceDefinitionID, double>)GetResourceStoredUnits
                 ),
         };
 
@@ -441,8 +443,8 @@ namespace TurboMode.Patches
             {
                 cache = new ResourceContainerGroupCache(group);
                 resourceContainerGroupCacheField.Set(group, cache);
-                cache.SyncFromGroup();
             }
+            cache.SyncFromGroupIfStale();
             return cache;
         }
 
@@ -450,6 +452,7 @@ namespace TurboMode.Patches
             ResourceContainerGroupSequence rcgs,
             ResourceDefinitionID resourceId)
         {
+            using var marker = externalCapacityMarker.Auto();
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
@@ -465,6 +468,7 @@ namespace TurboMode.Patches
             ResourceDefinitionID resourceId
             )
         {
+            using var marker = externalStoredMarker.Auto();
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
@@ -480,6 +484,7 @@ namespace TurboMode.Patches
             ResourceContainerGroup rcg,
             ResourceDefinitionID resourceId)
         {
+            using var marker = externalCapacityMarker.Auto();
             var cache = GetCacheForUI(rcg);
             return cache.GetResourceCapacityUnits(resourceId);
         }
@@ -490,6 +495,7 @@ namespace TurboMode.Patches
             ResourceDefinitionID resourceId
             )
         {
+            using var marker = externalStoredMarker.Auto();
             var cache = GetCacheForUI(rcg);
             return cache.GetResourceStoredUnits(resourceId);
         }

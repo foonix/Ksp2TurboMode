@@ -17,6 +17,8 @@ namespace TurboMode.Models
         readonly ResourceContainerGroup group;
         readonly NativeData nativeData;
 
+        int lastFrameUpdate = -1;
+
         private readonly struct NativeData
         {
             public readonly NativeList<ResourceAmounts> containerAmounts;
@@ -63,6 +65,15 @@ namespace TurboMode.Models
                 }
             }
             UpdateAggregates(nativeData);
+            lastFrameUpdate = Time.frameCount;
+        }
+
+        public void SyncFromGroupIfStale()
+        {
+            if(lastFrameUpdate != Time.frameCount)
+            {
+                SyncFromGroup();
+            }
         }
 
         public void SyncToGroup(HashSet<FlowRequests.ContainerResourceChangedNote> containersChanged)

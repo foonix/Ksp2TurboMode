@@ -46,22 +46,6 @@ namespace TurboMode.Patches
                 typeof(ResourceFlowRequestManager).GetMethod("UpdateFlowRequests"),
                 (Action<Action<ResourceFlowRequestManager, double, double>, ResourceFlowRequestManager, double, double>)UpdateFlowRequests
                 ),
-            new Hook(
-                typeof(ResourceContainerGroupSequence).GetMethod("GetResourceCapacityUnits"),
-                (Func<Func<ResourceContainerGroupSequence, ResourceDefinitionID, double>, ResourceContainerGroupSequence, ResourceDefinitionID, double>)GetResourceCapacityUnits
-                ),
-            new Hook(
-                typeof(ResourceContainerGroupSequence).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
-                (Func<Func<ResourceContainerGroupSequence, ResourceDefinitionID, double>, ResourceContainerGroupSequence, ResourceDefinitionID, double>)GetResourceStoredUnits
-                ),
-            new Hook(
-                typeof(ResourceContainerGroup).GetMethod("GetResourceCapacityUnits", new Type[] {typeof(ResourceDefinitionID)}),
-                (Func<Func<ResourceContainerGroup, ResourceDefinitionID, double>, ResourceContainerGroup, ResourceDefinitionID, double>)GetResourceCapacityUnits
-                ),
-            new Hook(
-                typeof(ResourceContainerGroup).GetMethod("GetResourceStoredUnits", new Type[] {typeof(ResourceDefinitionID)}),
-                (Func<Func<ResourceContainerGroup, ResourceDefinitionID, double>, ResourceContainerGroup, ResourceDefinitionID, double>)GetResourceStoredUnits
-                ),
         };
 
         private FlowRequests(ResourceFlowRequestManager rfrm)
@@ -435,7 +419,7 @@ namespace TurboMode.Patches
         }
         #endregion
 
-        #region hooks to speed up other game interactions with RCGS.
+        #region Drop-in replacement at the IL level for original call.  Used by prepatcher.
         static ResourceContainerGroupCache GetCacheForUI(ResourceContainerGroup group)
         {
             var cache = resourceContainerGroupCacheField.Get(group);
@@ -448,9 +432,7 @@ namespace TurboMode.Patches
             return cache;
         }
 
-        static double GetResourceCapacityUnits(Func<ResourceContainerGroupSequence, ResourceDefinitionID, double> orig,
-            ResourceContainerGroupSequence rcgs,
-            ResourceDefinitionID resourceId)
+        public static double GetResourceSeqeuenceCapacityUnitsCached(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceId)
         {
             using var marker = externalCapacityMarker.Auto();
             double total = 0.0;
@@ -463,10 +445,7 @@ namespace TurboMode.Patches
             return total;
         }
 
-        static double GetResourceStoredUnits(Func<ResourceContainerGroupSequence, ResourceDefinitionID, double> orig,
-            ResourceContainerGroupSequence rcgs,
-            ResourceDefinitionID resourceId
-            )
+        public static double GetResourceSequenceStoredUnitsCached(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceId)
         {
             using var marker = externalStoredMarker.Auto();
             double total = 0.0;
@@ -479,21 +458,14 @@ namespace TurboMode.Patches
             return total;
         }
 
-        static double GetResourceCapacityUnits(
-            Func<ResourceContainerGroup, ResourceDefinitionID, double> orig,
-            ResourceContainerGroup rcg,
-            ResourceDefinitionID resourceId)
+        public static double GetResourceGroupCapacityUnitsCached(ResourceContainerGroup rcg, ResourceDefinitionID resourceId)
         {
             using var marker = externalCapacityMarker.Auto();
             var cache = GetCacheForUI(rcg);
             return cache.GetResourceCapacityUnits(resourceId);
         }
 
-        static double GetResourceStoredUnits(
-            Func<ResourceContainerGroup, ResourceDefinitionID, double> orig,
-            ResourceContainerGroup rcg,
-            ResourceDefinitionID resourceId
-            )
+        public static double GetResourceGroupStoredUnitsCached(ResourceContainerGroup rcg, ResourceDefinitionID resourceId)
         {
             using var marker = externalStoredMarker.Auto();
             var cache = GetCacheForUI(rcg);

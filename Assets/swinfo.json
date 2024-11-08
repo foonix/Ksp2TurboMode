@@ -1,0 +1,15 @@
+{
+  "spec": "2.0",
+  "mod_id": "TurboMode",
+  "name": "TurboMode",
+  "author": "Foonix",
+  "description": "Performance improvements for KSP2",
+  "source": "",
+  "version": "0.1.0",
+  "ksp2_version": {
+    "min": "0.2.2",
+    "max": "*"
+  },
+  "dependencies": [],
+  "conflicts": []
+}

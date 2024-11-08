@@ -34,11 +34,9 @@ namespace TurboMode.Patches
             = new(typeof(ResourceContainerGroup).GetField("resourceContainerGroupCache"));
 
         private static readonly ProfilerMarker updateFlowRequestsMarker = new("TM FlowRequests.UpdateFlowRequests()");
-        private static readonly ProfilerMarker singleRequestMarker = new("TM FlowRequests.ProcessActiveRequests() (single)");
+        private static readonly ProfilerMarker processActiveRequestsMarker = new("TM FlowRequests.ProcessActiveRequests()");
         private static readonly ProfilerMarker requestsUpdatedMarker = new("TM FlowRequests RequestsUpdated (event)");
-        private static readonly ProfilerMarker containerChangedMarker = new("TM FlowRequests ContainerChanged (Message)");
-        private static readonly ProfilerMarker externalStoredMarker = new("TM FlowRequests external stored amount request");
-        private static readonly ProfilerMarker externalCapacityMarker = new("TM FlowRequests external capacity amount request");
+        private static readonly ProfilerMarker containerChangedMarker = new("TM FlowRequests.SendContainersChangedMessages()");
 
         public static List<IDetour> MakeHooks() => new()
         {
@@ -161,10 +159,10 @@ namespace TurboMode.Patches
         private void ProcessActiveRequests(List<ManagedRequestWrapper> orderedRequests,
             double tickUniversalTime, double tickDeltaTime)
         {
+            using var marker = processActiveRequestsMarker.Auto();
+
             foreach (ManagedRequestWrapper managedRequestWrapper in orderedRequests)
             {
-                using var marker = singleRequestMarker.Auto();
-
                 managedRequestWrapper.RequestResolutionState.LastTickUniversalTime = tickUniversalTime;
                 managedRequestWrapper.RequestResolutionState.LastTickDeltaTime = tickDeltaTime;
                 bool fullyFulfilled = true;
@@ -434,7 +432,6 @@ namespace TurboMode.Patches
 
         public static double GetResourceSeqeuenceCapacityUnitsCached(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceId)
         {
-            using var marker = externalCapacityMarker.Auto();
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
@@ -447,7 +444,6 @@ namespace TurboMode.Patches
 
         public static double GetResourceSequenceStoredUnitsCached(ResourceContainerGroupSequence rcgs, ResourceDefinitionID resourceId)
         {
-            using var marker = externalStoredMarker.Auto();
             double total = 0.0;
             foreach (ResourceContainerGroup group in rcgs._groupsInSequence)
             {
@@ -460,14 +456,12 @@ namespace TurboMode.Patches
 
         public static double GetResourceGroupCapacityUnitsCached(ResourceContainerGroup rcg, ResourceDefinitionID resourceId)
         {
-            using var marker = externalCapacityMarker.Auto();
             var cache = GetCacheForUI(rcg);
             return cache.GetResourceCapacityUnits(resourceId);
         }
 
         public static double GetResourceGroupStoredUnitsCached(ResourceContainerGroup rcg, ResourceDefinitionID resourceId)
         {
-            using var marker = externalStoredMarker.Auto();
             var cache = GetCacheForUI(rcg);
             return cache.GetResourceStoredUnits(resourceId);
         }

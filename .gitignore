@@ -106,6 +106,10 @@ Assets/StreamingAssets*
 
 dist
 
+# release zip package tempdir.
+package
+TurboMode-*.zip
+
 # This directory contains data that can't be distributed by copyright.
 Assets/DoNotDistribute*
 *.resS

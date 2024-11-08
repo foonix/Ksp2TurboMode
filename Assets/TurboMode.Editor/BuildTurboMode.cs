@@ -2,6 +2,7 @@ using System.IO;
 using ThunderKit.Core.Data;
 using UnityEditor;
 using UnityEngine;
+using System.IO.Compression;
 
 namespace TurboMode.Editor
 {
@@ -29,14 +30,29 @@ namespace TurboMode.Editor
             Build(false);
         }
 
-        private static bool Build(bool debug)
+        [MenuItem("Tools/TurboMode/Build Release Package")]
+        public static void BuildReleasePackage()
+        {
+            Build(false, "package");
+            var packageZip = $"{TurboModePlugin.pluginId}-{TurboModePlugin.pluginVersion}.zip";
+            File.Delete(packageZip);
+            ZipFile.CreateFromDirectory("package", packageZip, System.IO.Compression.CompressionLevel.Optimal, false);
+            Directory.Delete("package", true);
+        }
+
+        private static bool Build(bool debug, string targetDir = null)
         {
             var tkSettings = ThunderKitSettings.GetOrCreateSettings<ThunderKitSettings>();
 
+            if (string.IsNullOrEmpty(targetDir))
+            {
+                targetDir = tkSettings.GamePath;
+            }
+
             // config
             string modName = "TurboMode";
-            var tmPluginDir = Path.Combine(tkSettings.GamePath, "BepInEx", "plugins", modName);
-            var bepInExPrepatchDir = Path.Combine(tkSettings.GamePath, "BepInEx", "patchers");
+            var tmPluginDir = Path.Combine(targetDir, "BepInEx", "plugins", modName);
+            var bepInExPrepatchDir = Path.Combine(targetDir, "BepInEx", "patchers");
             var buildFolder = "build";
             var pluginSrcManagedAssemblies = new string[]
             {
@@ -59,6 +75,9 @@ namespace TurboMode.Editor
                 // use these options for building scripts
                 options = BuildOptions.BuildScriptsOnly | (debug ? BuildOptions.Development : 0)
             };
+
+            Directory.CreateDirectory(tmPluginDir);
+            Directory.CreateDirectory(bepInExPrepatchDir);
 
             var report = BuildPipeline.BuildPlayer(buildPlayerOptions);
             if (report.summary.result == UnityEditor.Build.Reporting.BuildResult.Succeeded)
@@ -106,6 +125,9 @@ namespace TurboMode.Editor
                 var prepatchSrc = Path.Combine(buildFolder, $"{modName}_Data/Managed/TurboMode.Prepatch.dll");
                 var prepatchDest = Path.Combine(bepInExPrepatchDir, $"TurboMode.Prepatch.dll");
                 CopyOverwrite(prepatchSrc, prepatchDest);
+
+                // Copy swinfo.json
+                CopyOverwrite("Assets/swinfo.json", Path.Combine(tmPluginDir, "swinfo.json"));
 
                 Debug.Log("TurboMode build complete");
                 return true;

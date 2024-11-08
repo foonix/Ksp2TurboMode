@@ -12,9 +12,13 @@ using UnityEngine.SceneManagement;
 
 namespace TurboMode
 {
-    [BepInPlugin("TurboMode", "TurboMode", "0.2.2.0")]
+    [BepInPlugin(pluginName, pluginId, pluginVersion)]
     public class TurboModePlugin : BaseUnityPlugin
     {
+        public const string pluginName = "Turbo Mode";
+        public const string pluginId = "TurboMode";
+        public const string pluginVersion = "0.1.0";
+
         // If the file extension is .dll, SpaceWarp and BepInEx will log exceptions.
         public static readonly string burstCodeAssemblyName = "TurboMode_win_x86_64.dll_IGNOREME";
 

@@ -12,7 +12,7 @@ using UnityEngine.SceneManagement;
 
 namespace TurboMode
 {
-    [BepInPlugin(pluginName, pluginId, pluginVersion)]
+    [BepInPlugin(pluginId, pluginName, pluginVersion)]
     public class TurboModePlugin : BaseUnityPlugin
     {
         public const string pluginName = "Turbo Mode";

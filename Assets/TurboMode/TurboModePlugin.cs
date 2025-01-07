@@ -17,7 +17,7 @@ namespace TurboMode
     {
         public const string pluginName = "Turbo Mode";
         public const string pluginId = "TurboMode";
-        public const string pluginVersion = "0.1.0";
+        public const string pluginVersion = "0.1.1";
 
         // If the file extension is .dll, SpaceWarp and BepInEx will log exceptions.
         public static readonly string burstCodeAssemblyName = "TurboMode_win_x86_64.dll_IGNOREME";

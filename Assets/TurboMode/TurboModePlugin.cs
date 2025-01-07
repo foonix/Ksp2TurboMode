@@ -37,6 +37,7 @@ namespace TurboMode
         public ConfigEntry<bool> shutoffUnusedWindowHierarchies;
         public ConfigEntry<bool> enableFlowRequestOptimizations;
         public ConfigEntry<bool> miscCleanups;
+        public ConfigEntry<bool> graphicsJobsSettings;
 
         private void Awake()
         {
@@ -89,6 +90,12 @@ namespace TurboMode
                 "EnableFlowRequestOptimizations",
                 true,
                 "Improved code for vessel resource flow request processing and related processes."
+            );
+            graphicsJobsSettings = Config.Bind(
+                "General",
+                "EnableGraphicsJobs",
+                true,
+                "Enable Unity Graphics jobs settings in boot.config.  Speeds up camera rendering. Note: This setting requires TWO restarts to take effect or change."
             );
 
             testModeEnabled = testModeConfig.Value;

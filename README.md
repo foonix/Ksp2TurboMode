@@ -12,6 +12,7 @@ This mod's goal is to improve CPU performance of the main KSP2 game loop without
 - Reduce overhead from resource flow requests, such as battery charing/discharing, RCS thrusters, and engine firing.
 - Faster Burst based code for KSP's `TransformFrame`s speeds up a number of systems.
 - Significant reductions in C# garbage reduces slowdowns from garbage collection.
+- Enable Unity graphics job setttings that speed up camera rendering. (Note: requires TWO restarts to change.)
 
 ## CKAN Installation
  - Download the CKAN file TurboMode-x.y.z.ckan from the [release page](https://github.com/foonix/Ksp2TurboMode/releases).

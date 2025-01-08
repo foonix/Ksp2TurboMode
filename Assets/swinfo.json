@@ -5,7 +5,7 @@
   "author": "Foonix",
   "description": "Performance improvements for KSP2",
   "source": "",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "ksp2_version": {
     "min": "0.2.2",
     "max": "*"
